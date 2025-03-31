@@ -98,7 +98,7 @@ const SecurityInfo = () => {
         <VulnerabilityCard
           title="Stored XSS (Cross-Site Scripting)"
           description="The customer management system is vulnerable to stored XSS in vulnerable mode."
-          vulnerability="When adding a new customer, malicious JavaScript can be injected in the name field that will be executed when viewed in the customers list. For example, entering a name like: <script>alert('XSS')</script> or <img src='x' onerror='alert(\"XSS\")'>"
+          vulnerability="When adding a new customer, malicious JavaScript can be injected in the name field that will be executed when viewed in the customers list. For example, entering a name like: &lt;script&gt;alert('XSS')&lt;/script&gt; or &lt;img src='x' onerror='alert(\"XSS\")'&gt;"
           solution="In secure mode, we sanitize input by escaping HTML special characters. The application uses the replace() method to convert < to &lt; and > to &gt; which prevents HTML injection."
           icon={AlertTriangle}
         />
