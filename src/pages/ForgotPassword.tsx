@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,9 +17,10 @@ const ForgotPassword = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [step, setStep] = useState(1);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const handleRequestReset = (e: React.FormEvent) => {
+  const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!email.trim()) {
@@ -28,26 +28,41 @@ const ForgotPassword = () => {
       return;
     }
     
-    const result = requestPasswordReset(email);
+    setIsLoading(true);
     
-    if (result.success) {
-      toast({
-        title: "Reset Email Sent",
-        description: "Check your email for the reset token",
-      });
-      // For demo purposes, we'll show the token directly
-      toast({
-        title: "Demo Mode",
-        description: `Your reset token is: ${result.token}`,
-        variant: "default"
-      });
-      setStep(2);
-    } else {
+    try {
+      const result = await requestPasswordReset(email);
+      
+      if (result.success) {
+        toast({
+          title: "Reset Email Sent",
+          description: "Check your email for the reset token",
+        });
+        // For demo purposes, we'll show the token directly
+        if (result.token) {
+          toast({
+            title: "Demo Mode",
+            description: `Your reset token is: ${result.token}`,
+            variant: "default"
+          });
+        }
+        setStep(2);
+      } else {
+        toast({
+          title: "Error",
+          description: "Email not found in our records",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Reset request error:', error);
       toast({
         title: "Error",
-        description: "Email not found in our records",
+        description: "Failed to request password reset",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -76,7 +91,7 @@ const ForgotPassword = () => {
     }
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const newErrors: { [key: string]: string } = {};
@@ -95,20 +110,33 @@ const ForgotPassword = () => {
       return;
     }
     
-    const success = resetPassword(token, newPassword);
+    setIsLoading(true);
     
-    if (success) {
+    try {
+      const success = await resetPassword(token, newPassword);
+      
+      if (success) {
+        toast({
+          title: "Password Reset Successful",
+          description: "You can now login with your new password",
+        });
+        setStep(4);
+      } else {
+        toast({
+          title: "Password Reset Failed",
+          description: "Please try again or request a new reset token",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Reset password error:', error);
       toast({
-        title: "Password Reset Successful",
-        description: "You can now login with your new password",
-      });
-      setStep(4);
-    } else {
-      toast({
-        title: "Password Reset Failed",
-        description: "Please try again or request a new reset token",
+        title: "Error",
+        description: "Failed to reset password",
         variant: "destructive"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
