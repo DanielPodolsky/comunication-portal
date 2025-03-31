@@ -1,7 +1,4 @@
 
-import { toast } from '@/hooks/use-toast';
-import crypto from 'crypto';
-
 // Simulating database with localStorage for demo
 export interface User {
   id: string;
@@ -76,24 +73,65 @@ const initializeDatabase = () => {
 // Initialize the database on module load
 initializeDatabase();
 
-// Hash password using HMAC + Salt
-export const hashPassword = (password: string, salt?: string): { hash: string, salt: string } => {
-  const generatedSalt = salt || crypto.randomBytes(16).toString('hex');
-  const hash = crypto.createHmac('sha256', generatedSalt)
-    .update(password)
-    .digest('hex');
+// Generate a secure random string (replacement for crypto.randomBytes)
+const generateRandomString = (length = 16) => {
+  const array = new Uint8Array(length);
+  window.crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+};
+
+// Generate UUID (replacement for crypto.randomUUID)
+const generateUUID = () => {
+  const array = new Uint8Array(16);
+  window.crypto.getRandomValues(array);
+  
+  // Set version (4) and variant (RFC4122)
+  array[6] = (array[6] & 0x0f) | 0x40;
+  array[8] = (array[8] & 0x3f) | 0x80;
+  
+  // Convert to string
+  return [
+    array.subarray(0, 4),
+    array.subarray(4, 6),
+    array.subarray(6, 8),
+    array.subarray(8, 10),
+    array.subarray(10, 16)
+  ].map(bytes => 
+    Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  ).join('-');
+};
+
+// Hash password using SubtleCrypto
+export const hashPassword = async (password: string, salt?: string): Promise<{ hash: string, salt: string }> => {
+  const generatedSalt = salt || generateRandomString(16);
+  
+  // Convert password and salt to Uint8Array
+  const encoder = new TextEncoder();
+  const passwordData = encoder.encode(password + generatedSalt);
+  
+  // Hash with SHA-256
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', passwordData);
+  
+  // Convert hash to hex string
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hash = hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
   
   return { hash, salt: generatedSalt };
 };
 
 // Generate SHA-1 token for password reset
-export const generateResetToken = (): string => {
-  const randomValue = crypto.randomBytes(16).toString('hex');
-  return crypto.createHash('sha1').update(randomValue).digest('hex');
+export const generateResetToken = async (): Promise<string> => {
+  const randomValue = generateRandomString(16);
+  const encoder = new TextEncoder();
+  const data = encoder.encode(randomValue);
+  
+  const hashBuffer = await window.crypto.subtle.digest('SHA-1', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
 // User Services (Vulnerable Version)
-export const createUserVulnerable = (username: string, email: string, password: string): User | null => {
+export const createUserVulnerable = async (username: string, email: string, password: string): Promise<User | null> => {
   try {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     
@@ -103,9 +141,9 @@ export const createUserVulnerable = (username: string, email: string, password: 
       return null;
     }
     
-    const { hash, salt } = hashPassword(password);
+    const { hash, salt } = await hashPassword(password);
     const newUser: User = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       username,
       email,
       passwordHash: hash,
@@ -125,7 +163,7 @@ export const createUserVulnerable = (username: string, email: string, password: 
 };
 
 // User Services (Secure Version)
-export const createUser = (username: string, email: string, password: string): User | null => {
+export const createUser = async (username: string, email: string, password: string): Promise<User | null> => {
   try {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     
@@ -139,10 +177,10 @@ export const createUser = (username: string, email: string, password: string): U
     }
     
     // Securely hash password
-    const { hash, salt } = hashPassword(password);
+    const { hash, salt } = await hashPassword(password);
     
     const newUser: User = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       username: username.trim(),
       email: email.trim(),
       passwordHash: hash,
@@ -162,7 +200,7 @@ export const createUser = (username: string, email: string, password: string): U
 };
 
 // Vulnerable login
-export const loginUserVulnerable = (username: string, password: string): User | null => {
+export const loginUserVulnerable = async (username: string, password: string): Promise<User | null> => {
   try {
     // This is vulnerable to SQL injection in a real database
     // For demo purposes, we're simulating the vulnerability
@@ -177,7 +215,7 @@ export const loginUserVulnerable = (username: string, password: string): User | 
       return null;
     }
     
-    const { hash } = hashPassword(password, user.salt);
+    const { hash } = await hashPassword(password, user.salt);
     
     if (hash === user.passwordHash) {
       // Reset failed attempts on success
@@ -200,7 +238,7 @@ export const loginUserVulnerable = (username: string, password: string): User | 
 };
 
 // Secure login
-export const loginUser = (username: string, password: string): User | null => {
+export const loginUser = async (username: string, password: string): Promise<User | null> => {
   try {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     
@@ -216,7 +254,7 @@ export const loginUser = (username: string, password: string): User | null => {
       return null;
     }
     
-    const { hash } = hashPassword(password, user.salt);
+    const { hash } = await hashPassword(password, user.salt);
     
     if (hash === user.passwordHash) {
       // Reset failed attempts on success
@@ -228,11 +266,6 @@ export const loginUser = (username: string, password: string): User | null => {
       user.failedLoginAttempts += 1;
       if (user.failedLoginAttempts >= 3) {
         user.locked = true;
-        toast({
-          title: "Account Locked",
-          description: "Too many failed login attempts. Your account has been locked.",
-          variant: "destructive"
-        });
       }
       localStorage.setItem('users', JSON.stringify(users));
       return null;
@@ -244,7 +277,7 @@ export const loginUser = (username: string, password: string): User | null => {
 };
 
 // Password reset functions
-export const requestPasswordReset = (email: string): { success: boolean, token?: string } => {
+export const requestPasswordReset = async (email: string): Promise<{ success: boolean, token?: string }> => {
   try {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     const user = users.find((u: User) => u.email === email);
@@ -253,7 +286,7 @@ export const requestPasswordReset = (email: string): { success: boolean, token?:
       return { success: false };
     }
     
-    const resetToken = generateResetToken();
+    const resetToken = await generateResetToken();
     user.lastResetToken = resetToken;
     user.lastResetTokenExpiry = Date.now() + 3600000; // 1 hour
     
@@ -284,7 +317,7 @@ export const verifyResetToken = (token: string): boolean => {
   }
 };
 
-export const resetPassword = (token: string, newPassword: string): boolean => {
+export const resetPassword = async (token: string, newPassword: string): Promise<boolean> => {
   try {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     const userIndex = users.findIndex((u: User) => u.lastResetToken === token);
@@ -294,13 +327,13 @@ export const resetPassword = (token: string, newPassword: string): boolean => {
     }
     
     const user = users[userIndex];
-    const { hash, salt } = hashPassword(newPassword);
+    const { hash, salt } = await hashPassword(newPassword);
     
     // Check password history
-    const isInHistory = user.passwordHistory.some(historyHash => {
-      const checkHash = hashPassword(newPassword, user.salt).hash;
+    const isInHistory = await Promise.all(user.passwordHistory.map(async (historyHash) => {
+      const checkHash = (await hashPassword(newPassword, user.salt)).hash;
       return checkHash === historyHash;
-    });
+    })).then(results => results.some(result => result));
     
     if (isInHistory) {
       return false;
@@ -328,7 +361,7 @@ export const resetPassword = (token: string, newPassword: string): boolean => {
   }
 };
 
-export const changePassword = (userId: string, currentPassword: string, newPassword: string): boolean => {
+export const changePassword = async (userId: string, currentPassword: string, newPassword: string): Promise<boolean> => {
   try {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     const userIndex = users.findIndex((u: User) => u.id === userId);
@@ -340,23 +373,23 @@ export const changePassword = (userId: string, currentPassword: string, newPassw
     const user = users[userIndex];
     
     // Verify current password
-    const currentHash = hashPassword(currentPassword, user.salt).hash;
+    const currentHash = (await hashPassword(currentPassword, user.salt)).hash;
     if (currentHash !== user.passwordHash) {
       return false;
     }
     
     // Check password history
-    const isInHistory = user.passwordHistory.some(historyHash => {
-      const checkHash = hashPassword(newPassword, user.salt).hash;
+    const isInHistory = await Promise.all(user.passwordHistory.map(async (historyHash) => {
+      const checkHash = (await hashPassword(newPassword, user.salt)).hash;
       return checkHash === historyHash;
-    });
+    })).then(results => results.some(result => result));
     
     if (isInHistory) {
       return false;
     }
     
     // Set new password
-    const { hash, salt } = hashPassword(newPassword);
+    const { hash, salt } = await hashPassword(newPassword);
     user.passwordHash = hash;
     user.salt = salt;
     
@@ -382,7 +415,7 @@ export const createCustomerVulnerable = (customerData: Omit<Customer, 'id'>): Cu
     
     const newCustomer: Customer = {
       ...customerData,
-      id: crypto.randomUUID()
+      id: generateUUID()
     };
     
     customers.push(newCustomer);
@@ -411,7 +444,7 @@ export const createCustomer = (customerData: Omit<Customer, 'id'>): Customer | n
     
     const newCustomer: Customer = {
       ...sanitizedData,
-      id: crypto.randomUUID()
+      id: generateUUID()
     };
     
     customers.push(newCustomer);

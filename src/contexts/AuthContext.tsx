@@ -40,8 +40,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // Use secure or vulnerable login based on mode
       const loggedInUser = isSecureMode 
-        ? loginUser(username, password)
-        : loginUserVulnerable(username, password);
+        ? await loginUser(username, password)
+        : await loginUserVulnerable(username, password);
       
       if (loggedInUser) {
         setUser(loggedInUser);

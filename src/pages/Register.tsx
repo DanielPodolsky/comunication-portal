@@ -18,6 +18,7 @@ const Register = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isSecureMode } = useAuth();
@@ -48,30 +49,43 @@ const Register = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!validateForm()) {
       return;
     }
     
-    // Use secure or vulnerable version based on mode
-    const result = isSecureMode 
-      ? createUser(username, email, password)
-      : createUserVulnerable(username, email, password);
+    setIsSubmitting(true);
     
-    if (result) {
-      toast({
-        title: "Registration Successful",
-        description: "Your account has been created. You can now log in.",
-      });
-      navigate('/login');
-    } else {
+    try {
+      // Use secure or vulnerable version based on mode
+      const result = isSecureMode 
+        ? await createUser(username, email, password)
+        : await createUserVulnerable(username, email, password);
+      
+      if (result) {
+        toast({
+          title: "Registration Successful",
+          description: "Your account has been created. You can now log in.",
+        });
+        navigate('/login');
+      } else {
+        toast({
+          title: "Registration Failed",
+          description: "Username or email already exists",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Registration error:', error);
       toast({
         title: "Registration Failed",
-        description: "Username or email already exists",
+        description: "An unexpected error occurred",
         variant: "destructive"
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -98,6 +112,7 @@ const Register = () => {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Enter username"
                   className={errors.username ? "border-red-500" : ""}
+                  disabled={isSubmitting}
                 />
                 {errors.username && <p className="text-red-500 text-xs">{errors.username}</p>}
               </div>
@@ -111,6 +126,7 @@ const Register = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="Enter email"
                   className={errors.email ? "border-red-500" : ""}
+                  disabled={isSubmitting}
                 />
                 {errors.email && <p className="text-red-500 text-xs">{errors.email}</p>}
               </div>
@@ -124,6 +140,7 @@ const Register = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password"
                   className={errors.password ? "border-red-500" : ""}
+                  disabled={isSubmitting}
                 />
                 {errors.password && <p className="text-red-500 text-xs">{errors.password}</p>}
                 <PasswordRequirements password={password} />
@@ -138,14 +155,15 @@ const Register = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm password"
                   className={errors.confirmPassword ? "border-red-500" : ""}
+                  disabled={isSubmitting}
                 />
                 {errors.confirmPassword && (
                   <p className="text-red-500 text-xs">{errors.confirmPassword}</p>
                 )}
               </div>
               
-              <Button type="submit" className="w-full mt-6">
-                Register
+              <Button type="submit" className="w-full mt-6" disabled={isSubmitting}>
+                {isSubmitting ? "Registering..." : "Register"}
               </Button>
             </form>
           </CardContent>
