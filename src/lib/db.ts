@@ -1,5 +1,14 @@
 
-// Simulating database with localStorage for demo
+import { pool } from './mysql';
+import crypto from 'crypto';
+
+// Initialize the database on module load
+export const initDatabase = async () => {
+  const { initializeDatabase } = await import('./mysql');
+  await initializeDatabase();
+};
+
+// Types
 export interface User {
   id: string;
   username: string;
@@ -32,118 +41,59 @@ export interface Package {
   features: string[];
 }
 
-// Initialize database tables if they don't exist
-const initializeDatabase = () => {
-  if (!localStorage.getItem('users')) {
-    localStorage.setItem('users', JSON.stringify([]));
-  }
-  if (!localStorage.getItem('customers')) {
-    localStorage.setItem('customers', JSON.stringify([]));
-  }
-  if (!localStorage.getItem('packages')) {
-    localStorage.setItem('packages', JSON.stringify([
-      {
-        id: '1',
-        name: 'Basic',
-        description: 'Basic internet package for small households',
-        price: 29.99,
-        speed: 100,
-        features: ['100 Mbps', 'Unlimited data', 'Basic support']
-      },
-      {
-        id: '2',
-        name: 'Standard',
-        description: 'Standard internet package for medium households',
-        price: 49.99,
-        speed: 300,
-        features: ['300 Mbps', 'Unlimited data', 'Priority support', 'Free installation']
-      },
-      {
-        id: '3',
-        name: 'Premium',
-        description: 'Premium internet package for large households',
-        price: 79.99,
-        speed: 1000,
-        features: ['1 Gbps', 'Unlimited data', '24/7 Premium support', 'Free installation', 'Smart Wi-Fi']
-      }
-    ]));
-  }
-};
-
-// Initialize the database on module load
-initializeDatabase();
-
-// Generate a secure random string (replacement for crypto.randomBytes)
+// Generate a secure random string
 const generateRandomString = (length = 16) => {
-  const array = new Uint8Array(length);
-  window.crypto.getRandomValues(array);
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  return crypto.randomBytes(length).toString('hex');
 };
 
-// Generate UUID (replacement for crypto.randomUUID)
+// Generate UUID
 const generateUUID = () => {
-  const array = new Uint8Array(16);
-  window.crypto.getRandomValues(array);
-  
-  // Set version (4) and variant (RFC4122)
-  array[6] = (array[6] & 0x0f) | 0x40;
-  array[8] = (array[8] & 0x3f) | 0x80;
-  
-  // Convert to string
-  return [
-    array.subarray(0, 4),
-    array.subarray(4, 6),
-    array.subarray(6, 8),
-    array.subarray(8, 10),
-    array.subarray(10, 16)
-  ].map(bytes => 
-    Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-  ).join('-');
+  return crypto.randomUUID();
 };
 
-// Hash password using SubtleCrypto
+// Hash password using Node.js crypto
 export const hashPassword = async (password: string, salt?: string): Promise<{ hash: string, salt: string }> => {
   const generatedSalt = salt || generateRandomString(16);
   
-  // Convert password and salt to Uint8Array
-  const encoder = new TextEncoder();
-  const passwordData = encoder.encode(password + generatedSalt);
-  
-  // Hash with SHA-256
-  const hashBuffer = await window.crypto.subtle.digest('SHA-256', passwordData);
-  
-  // Convert hash to hex string
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hash = hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
-  
-  return { hash, salt: generatedSalt };
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(password, generatedSalt, 1000, 64, 'sha512', (err, derivedKey) => {
+      if (err) reject(err);
+      resolve({
+        hash: derivedKey.toString('hex'),
+        salt: generatedSalt
+      });
+    });
+  });
 };
 
-// Generate SHA-1 token for password reset
+// Generate token for password reset
 export const generateResetToken = async (): Promise<string> => {
-  const randomValue = generateRandomString(16);
-  const encoder = new TextEncoder();
-  const data = encoder.encode(randomValue);
-  
-  const hashBuffer = await window.crypto.subtle.digest('SHA-1', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return crypto.randomBytes(20).toString('hex');
 };
 
 // User Services (Vulnerable Version)
 export const createUserVulnerable = async (username: string, email: string, password: string): Promise<User | null> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    // This is vulnerable to SQL injection in a real database
+    const [rows] = await pool.execute(
+      `SELECT * FROM users WHERE username = '${username}' OR email = '${email}'`
+    );
     
-    // Check if user already exists
-    const existingUser = users.find((u: User) => u.username === username || u.email === email);
-    if (existingUser) {
+    if ((rows as any[]).length > 0) {
       return null;
     }
     
     const { hash, salt } = await hashPassword(password);
-    const newUser: User = {
-      id: generateUUID(),
+    const id = generateUUID();
+    const passwordHistory = JSON.stringify([hash]);
+    
+    await pool.execute(
+      `INSERT INTO users (id, username, email, passwordHash, salt, passwordHistory, failedLoginAttempts, locked) 
+       VALUES ('${id}', '${username}', '${email}', '${hash}', '${salt}', '${passwordHistory}', 0, false)`
+    );
+    
+    return {
+      id,
       username,
       email,
       passwordHash: hash,
@@ -152,10 +102,6 @@ export const createUserVulnerable = async (username: string, email: string, pass
       failedLoginAttempts: 0,
       locked: false
     };
-    
-    users.push(newUser);
-    localStorage.setItem('users', JSON.stringify(users));
-    return newUser;
   } catch (error) {
     console.error('Failed to create user:', error);
     return null;
@@ -165,22 +111,28 @@ export const createUserVulnerable = async (username: string, email: string, pass
 // User Services (Secure Version)
 export const createUser = async (username: string, email: string, password: string): Promise<User | null> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    
-    // Check if user already exists (secure way)
-    const existingUser = users.find((u: User) => 
-      u.username === username || u.email === email
+    // Secure way with parameterized query
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE username = ? OR email = ?',
+      [username.trim(), email.trim()]
     );
     
-    if (existingUser) {
+    if ((rows as any[]).length > 0) {
       return null;
     }
     
-    // Securely hash password
     const { hash, salt } = await hashPassword(password);
+    const id = generateUUID();
+    const passwordHistory = JSON.stringify([hash]);
     
-    const newUser: User = {
-      id: generateUUID(),
+    await pool.execute(
+      `INSERT INTO users (id, username, email, passwordHash, salt, passwordHistory, failedLoginAttempts, locked) 
+       VALUES (?, ?, ?, ?, ?, ?, 0, false)`,
+      [id, username.trim(), email.trim(), hash, salt, passwordHistory]
+    );
+    
+    return {
+      id,
       username: username.trim(),
       email: email.trim(),
       passwordHash: hash,
@@ -189,10 +141,6 @@ export const createUser = async (username: string, email: string, password: stri
       failedLoginAttempts: 0,
       locked: false
     };
-    
-    users.push(newUser);
-    localStorage.setItem('users', JSON.stringify(users));
-    return newUser;
   } catch (error) {
     console.error('Failed to create user:', error);
     return null;
@@ -203,32 +151,39 @@ export const createUser = async (username: string, email: string, password: stri
 export const loginUserVulnerable = async (username: string, password: string): Promise<User | null> => {
   try {
     // This is vulnerable to SQL injection in a real database
-    // For demo purposes, we're simulating the vulnerability
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = users.find((u: User) => u.username === username);
+    const [rows] = await pool.execute(
+      `SELECT * FROM users WHERE username = '${username}'`
+    );
     
-    if (!user) {
+    if ((rows as any[]).length === 0) {
       return null;
     }
+    
+    const user = (rows as any[])[0];
     
     if (user.locked) {
       return null;
     }
     
+    // Convert JSON string to array
+    user.passwordHistory = JSON.parse(user.passwordHistory);
+    
     const { hash } = await hashPassword(password, user.salt);
     
     if (hash === user.passwordHash) {
       // Reset failed attempts on success
-      user.failedLoginAttempts = 0;
-      localStorage.setItem('users', JSON.stringify(users));
-      return user;
+      await pool.execute(
+        `UPDATE users SET failedLoginAttempts = 0 WHERE id = '${user.id}'`
+      );
+      return user as User;
     } else {
       // Increment failed attempts
-      user.failedLoginAttempts += 1;
-      if (user.failedLoginAttempts >= 3) {
-        user.locked = true;
-      }
-      localStorage.setItem('users', JSON.stringify(users));
+      const newFailedAttempts = user.failedLoginAttempts + 1;
+      const locked = newFailedAttempts >= 3;
+      
+      await pool.execute(
+        `UPDATE users SET failedLoginAttempts = ${newFailedAttempts}, locked = ${locked} WHERE id = '${user.id}'`
+      );
       return null;
     }
   } catch (error) {
@@ -240,34 +195,42 @@ export const loginUserVulnerable = async (username: string, password: string): P
 // Secure login
 export const loginUser = async (username: string, password: string): Promise<User | null> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE username = ?',
+      [username.trim()]
+    );
     
-    // Sanitize input and use parameterized query equivalent
-    const sanitizedUsername = username.trim();
-    const user = users.find((u: User) => u.username === sanitizedUsername);
-    
-    if (!user) {
+    if ((rows as any[]).length === 0) {
       return null;
     }
+    
+    const user = (rows as any[])[0];
     
     if (user.locked) {
       return null;
     }
     
+    // Convert JSON string to array
+    user.passwordHistory = JSON.parse(user.passwordHistory);
+    
     const { hash } = await hashPassword(password, user.salt);
     
     if (hash === user.passwordHash) {
       // Reset failed attempts on success
-      user.failedLoginAttempts = 0;
-      localStorage.setItem('users', JSON.stringify(users));
-      return user;
+      await pool.execute(
+        'UPDATE users SET failedLoginAttempts = 0 WHERE id = ?',
+        [user.id]
+      );
+      return user as User;
     } else {
       // Increment failed attempts
-      user.failedLoginAttempts += 1;
-      if (user.failedLoginAttempts >= 3) {
-        user.locked = true;
-      }
-      localStorage.setItem('users', JSON.stringify(users));
+      const newFailedAttempts = user.failedLoginAttempts + 1;
+      const locked = newFailedAttempts >= 3;
+      
+      await pool.execute(
+        'UPDATE users SET failedLoginAttempts = ?, locked = ? WHERE id = ?',
+        [newFailedAttempts, locked, user.id]
+      );
       return null;
     }
   } catch (error) {
@@ -279,18 +242,23 @@ export const loginUser = async (username: string, password: string): Promise<Use
 // Password reset functions
 export const requestPasswordReset = async (email: string): Promise<{ success: boolean, token?: string }> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = users.find((u: User) => u.email === email);
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE email = ?',
+      [email]
+    );
     
-    if (!user) {
+    if ((rows as any[]).length === 0) {
       return { success: false };
     }
     
+    const user = (rows as any[])[0];
     const resetToken = await generateResetToken();
-    user.lastResetToken = resetToken;
-    user.lastResetTokenExpiry = Date.now() + 3600000; // 1 hour
+    const expiryTime = Date.now() + 3600000; // 1 hour
     
-    localStorage.setItem('users', JSON.stringify(users));
+    await pool.execute(
+      'UPDATE users SET lastResetToken = ?, lastResetTokenExpiry = ? WHERE id = ?',
+      [resetToken, expiryTime, user.id]
+    );
     
     // In a real app, you would send an email here
     // For this demo, we'll return the token directly
@@ -301,12 +269,20 @@ export const requestPasswordReset = async (email: string): Promise<{ success: bo
   }
 };
 
-export const verifyResetToken = (token: string): boolean => {
+export const verifyResetToken = async (token: string): Promise<boolean> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const user = users.find((u: User) => u.lastResetToken === token);
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE lastResetToken = ?',
+      [token]
+    );
     
-    if (!user || !user.lastResetTokenExpiry || user.lastResetTokenExpiry < Date.now()) {
+    if ((rows as any[]).length === 0) {
+      return false;
+    }
+    
+    const user = (rows as any[])[0];
+    
+    if (!user.lastResetTokenExpiry || user.lastResetTokenExpiry < Date.now()) {
       return false;
     }
     
@@ -319,18 +295,26 @@ export const verifyResetToken = (token: string): boolean => {
 
 export const resetPassword = async (token: string, newPassword: string): Promise<boolean> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const userIndex = users.findIndex((u: User) => u.lastResetToken === token);
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE lastResetToken = ?',
+      [token]
+    );
     
-    if (userIndex === -1 || !users[userIndex].lastResetTokenExpiry || users[userIndex].lastResetTokenExpiry < Date.now()) {
+    if ((rows as any[]).length === 0) {
       return false;
     }
     
-    const user = users[userIndex];
-    const { hash, salt } = await hashPassword(newPassword);
+    const user = (rows as any[])[0];
+    
+    if (!user.lastResetTokenExpiry || user.lastResetTokenExpiry < Date.now()) {
+      return false;
+    }
+    
+    // Convert JSON string to array
+    user.passwordHistory = JSON.parse(user.passwordHistory);
     
     // Check password history
-    const isInHistory = await Promise.all(user.passwordHistory.map(async (historyHash) => {
+    const isInHistory = await Promise.all(user.passwordHistory.map(async (historyHash: string) => {
       const checkHash = (await hashPassword(newPassword, user.salt)).hash;
       return checkHash === historyHash;
     })).then(results => results.some(result => result));
@@ -339,21 +323,27 @@ export const resetPassword = async (token: string, newPassword: string): Promise
       return false;
     }
     
-    user.passwordHash = hash;
-    user.salt = salt;
-    user.lastResetToken = undefined;
-    user.lastResetTokenExpiry = undefined;
-    user.locked = false;
-    user.failedLoginAttempts = 0;
+    const { hash, salt } = await hashPassword(newPassword);
     
     // Update password history
-    user.passwordHistory.push(hash);
-    if (user.passwordHistory.length > 3) {
-      user.passwordHistory.shift();
+    const passwordHistory = [...user.passwordHistory, hash];
+    if (passwordHistory.length > 3) {
+      passwordHistory.shift();
     }
     
-    users[userIndex] = user;
-    localStorage.setItem('users', JSON.stringify(users));
+    await pool.execute(
+      `UPDATE users SET 
+       passwordHash = ?, 
+       salt = ?, 
+       lastResetToken = NULL, 
+       lastResetTokenExpiry = NULL, 
+       locked = 0, 
+       failedLoginAttempts = 0, 
+       passwordHistory = ?
+       WHERE id = ?`,
+      [hash, salt, JSON.stringify(passwordHistory), user.id]
+    );
+    
     return true;
   } catch (error) {
     console.error('Failed to reset password:', error);
@@ -363,14 +353,19 @@ export const resetPassword = async (token: string, newPassword: string): Promise
 
 export const changePassword = async (userId: string, currentPassword: string, newPassword: string): Promise<boolean> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const userIndex = users.findIndex((u: User) => u.id === userId);
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
     
-    if (userIndex === -1) {
+    if ((rows as any[]).length === 0) {
       return false;
     }
     
-    const user = users[userIndex];
+    const user = (rows as any[])[0];
+    
+    // Convert JSON string to array
+    user.passwordHistory = JSON.parse(user.passwordHistory);
     
     // Verify current password
     const currentHash = (await hashPassword(currentPassword, user.salt)).hash;
@@ -379,7 +374,7 @@ export const changePassword = async (userId: string, currentPassword: string, ne
     }
     
     // Check password history
-    const isInHistory = await Promise.all(user.passwordHistory.map(async (historyHash) => {
+    const isInHistory = await Promise.all(user.passwordHistory.map(async (historyHash: string) => {
       const checkHash = (await hashPassword(newPassword, user.salt)).hash;
       return checkHash === historyHash;
     })).then(results => results.some(result => result));
@@ -390,17 +385,22 @@ export const changePassword = async (userId: string, currentPassword: string, ne
     
     // Set new password
     const { hash, salt } = await hashPassword(newPassword);
-    user.passwordHash = hash;
-    user.salt = salt;
     
     // Update password history
-    user.passwordHistory.push(hash);
-    if (user.passwordHistory.length > 3) {
-      user.passwordHistory.shift();
+    const passwordHistory = [...user.passwordHistory, hash];
+    if (passwordHistory.length > 3) {
+      passwordHistory.shift();
     }
     
-    users[userIndex] = user;
-    localStorage.setItem('users', JSON.stringify(users));
+    await pool.execute(
+      `UPDATE users SET 
+       passwordHash = ?, 
+       salt = ?, 
+       passwordHistory = ?
+       WHERE id = ?`,
+      [hash, salt, JSON.stringify(passwordHistory), userId]
+    );
+    
     return true;
   } catch (error) {
     console.error('Failed to change password:', error);
@@ -409,18 +409,20 @@ export const changePassword = async (userId: string, currentPassword: string, ne
 };
 
 // Customer Services (Vulnerable Version)
-export const createCustomerVulnerable = (customerData: Omit<Customer, 'id'>): Customer | null => {
+export const createCustomerVulnerable = async (customerData: Omit<Customer, 'id'>): Promise<Customer | null> => {
   try {
-    const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+    const id = generateUUID();
     
-    const newCustomer: Customer = {
+    // Vulnerable to SQL injection
+    await pool.execute(
+      `INSERT INTO customers (id, name, email, phone, address, packageId, userId)
+       VALUES ('${id}', '${customerData.name}', '${customerData.email}', '${customerData.phone}', '${customerData.address}', '${customerData.packageId}', '${customerData.userId}')`
+    );
+    
+    return {
       ...customerData,
-      id: generateUUID()
+      id
     };
-    
-    customers.push(newCustomer);
-    localStorage.setItem('customers', JSON.stringify(customers));
-    return newCustomer;
   } catch (error) {
     console.error('Failed to create customer:', error);
     return null;
@@ -428,9 +430,9 @@ export const createCustomerVulnerable = (customerData: Omit<Customer, 'id'>): Cu
 };
 
 // Customer Services (Secure Version)
-export const createCustomer = (customerData: Omit<Customer, 'id'>): Customer | null => {
+export const createCustomer = async (customerData: Omit<Customer, 'id'>): Promise<Customer | null> => {
   try {
-    const customers = JSON.parse(localStorage.getItem('customers') || '[]');
+    const id = generateUUID();
     
     // Sanitize inputs to prevent XSS
     const sanitizedData = {
@@ -442,43 +444,68 @@ export const createCustomer = (customerData: Omit<Customer, 'id'>): Customer | n
       userId: customerData.userId
     };
     
-    const newCustomer: Customer = {
-      ...sanitizedData,
-      id: generateUUID()
-    };
+    await pool.execute(
+      `INSERT INTO customers (id, name, email, phone, address, packageId, userId)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, sanitizedData.name, sanitizedData.email, sanitizedData.phone, sanitizedData.address, sanitizedData.packageId, sanitizedData.userId]
+    );
     
-    customers.push(newCustomer);
-    localStorage.setItem('customers', JSON.stringify(customers));
-    return newCustomer;
+    return {
+      ...sanitizedData,
+      id
+    };
   } catch (error) {
     console.error('Failed to create customer:', error);
     return null;
   }
 };
 
-export const getCustomersByUserId = (userId: string): Customer[] => {
+export const getCustomersByUserId = async (userId: string): Promise<Customer[]> => {
   try {
-    const customers = JSON.parse(localStorage.getItem('customers') || '[]');
-    return customers.filter((c: Customer) => c.userId === userId);
+    const [rows] = await pool.execute(
+      'SELECT * FROM customers WHERE userId = ?',
+      [userId]
+    );
+    
+    return rows as Customer[];
   } catch (error) {
     console.error('Failed to get customers:', error);
     return [];
   }
 };
 
-export const getPackages = (): Package[] => {
+export const getPackages = async (): Promise<Package[]> => {
   try {
-    return JSON.parse(localStorage.getItem('packages') || '[]');
+    const [rows] = await pool.execute('SELECT * FROM packages');
+    
+    // Convert JSON strings to arrays for features
+    return (rows as any[]).map(pkg => ({
+      ...pkg,
+      features: JSON.parse(pkg.features)
+    }));
   } catch (error) {
     console.error('Failed to get packages:', error);
     return [];
   }
 };
 
-export const getUserById = (userId: string): User | null => {
+export const getUserById = async (userId: string): Promise<User | null> => {
   try {
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    return users.find((u: User) => u.id === userId) || null;
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE id = ?',
+      [userId]
+    );
+    
+    if ((rows as any[]).length === 0) {
+      return null;
+    }
+    
+    const user = (rows as any[])[0];
+    
+    // Convert JSON string to array
+    user.passwordHistory = JSON.parse(user.passwordHistory);
+    
+    return user as User;
   } catch (error) {
     console.error('Failed to get user:', error);
     return null;
