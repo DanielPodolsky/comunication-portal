@@ -1,55 +1,51 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, loginUser, loginUserVulnerable, getUserById } from '@/lib/db';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { User, loginUser, loginUserVulnerable } from '@/lib/db';
 import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
   user: User | null;
-  isLoading: boolean;
-  isSecureMode: boolean;
-  toggleSecureMode: () => void;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  isLoading: boolean;
+  isSecureMode: boolean;
+  setIsSecureMode: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSecureMode, setIsSecureMode] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if user is logged in
-    const storedUserId = localStorage.getItem('currentUserId');
-    if (storedUserId) {
-      const foundUser = getUserById(storedUserId);
-      if (foundUser) {
-        setUser(foundUser);
-      } else {
-        localStorage.removeItem('currentUserId');
+    // Try to get user from localStorage on initial load
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        // Fixed: Don't set promise as state
+        setUser(JSON.parse(storedUser));
+      } catch (error) {
+        console.error('Failed to parse user from localStorage:', error);
+        localStorage.removeItem('user');
       }
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (username: string, password: string): Promise<boolean> => {
     setIsLoading(true);
-    
     try {
       // Use secure or vulnerable login based on mode
-      const loggedInUser = isSecureMode 
+      const authenticatedUser = isSecureMode
         ? await loginUser(username, password)
         : await loginUserVulnerable(username, password);
       
-      if (loggedInUser) {
-        setUser(loggedInUser);
-        localStorage.setItem('currentUserId', loggedInUser.id);
-        toast({
-          title: "Login Successful",
-          description: `Welcome back, ${loggedInUser.username}!`,
-        });
+      if (authenticatedUser) {
+        // Fixed: Store serialized user object
+        localStorage.setItem('user', JSON.stringify(authenticatedUser));
+        setUser(authenticatedUser);
         return true;
       } else {
         toast({
@@ -62,8 +58,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Login error:', error);
       toast({
-        title: "Login Error",
-        description: "An unexpected error occurred",
+        title: "Error",
+        description: "An error occurred during login",
         variant: "destructive"
       });
       return false;
@@ -73,32 +69,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    localStorage.removeItem('currentUserId');
+    localStorage.removeItem('user');
     setUser(null);
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out"
-    });
-  };
-
-  const toggleSecureMode = () => {
-    setIsSecureMode(prev => !prev);
-    toast({
-      title: `${!isSecureMode ? "Secure" : "Vulnerable"} Mode Activated`,
-      description: `The application is now in ${!isSecureMode ? "secure" : "vulnerable"} mode.`,
-      variant: !isSecureMode ? "default" : "destructive"
-    });
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isLoading, 
-      isSecureMode,
-      toggleSecureMode,
-      login, 
-      logout 
-    }}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading, isSecureMode, setIsSecureMode }}>
       {children}
     </AuthContext.Provider>
   );

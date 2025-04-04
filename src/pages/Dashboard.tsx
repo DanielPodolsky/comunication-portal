@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -21,16 +21,46 @@ const Dashboard = () => {
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [packageId, setPackageId] = useState('');
-  const [customers, setCustomers] = useState<Customer[]>(user ? getCustomersByUserId(user.id) : []);
-  const [packages] = useState<Package[]>(getPackages());
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [packages, setPackages] = useState<Package[]>([]);
   const [addedCustomer, setAddedCustomer] = useState<Customer | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load packages and customers on component mount
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      try {
+        // Get packages
+        const packagesData = getPackages();
+        setPackages(packagesData);
+        
+        // Get customers if user is logged in
+        if (user) {
+          const customersData = await getCustomersByUserId(user.id);
+          setCustomers(customersData);
+        }
+      } catch (error) {
+        console.error('Error loading data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load data",
+          variant: "destructive"
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadData();
+  }, [user, toast]);
 
   // If not logged in, redirect to login
   if (!user) {
     return <Navigate to="/login" />;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!name.trim() || !email.trim() || !phone.trim() || !address.trim() || !packageId) {
@@ -51,31 +81,41 @@ const Dashboard = () => {
       userId: user.id
     };
     
-    // Use secure or vulnerable version based on mode
-    const result = isSecureMode 
-      ? createCustomer(customerData)
-      : createCustomerVulnerable(customerData);
-    
-    if (result) {
-      toast({
-        title: "Success",
-        description: "Customer added successfully",
-      });
+    try {
+      // Use secure or vulnerable version based on mode
+      const result = isSecureMode 
+        ? await createCustomer(customerData)
+        : await createCustomerVulnerable(customerData);
       
-      // Update customers list
-      setCustomers(getCustomersByUserId(user.id));
-      setAddedCustomer(result);
-      
-      // Reset form
-      setName('');
-      setEmail('');
-      setPhone('');
-      setAddress('');
-      setPackageId('');
-    } else {
+      if (result) {
+        toast({
+          title: "Success",
+          description: "Customer added successfully",
+        });
+        
+        // Update customers list
+        const updatedCustomers = await getCustomersByUserId(user.id);
+        setCustomers(updatedCustomers);
+        setAddedCustomer(result);
+        
+        // Reset form
+        setName('');
+        setEmail('');
+        setPhone('');
+        setAddress('');
+        setPackageId('');
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to add customer",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Error adding customer:', error);
       toast({
         title: "Error",
-        description: "Failed to add customer",
+        description: "An error occurred while adding the customer",
         variant: "destructive"
       });
     }
