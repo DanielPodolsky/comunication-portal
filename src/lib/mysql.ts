@@ -1,19 +1,59 @@
-
 import mysql from 'mysql2/promise';
 
-// MySQL connection pool
-export const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'appuser',
-  password: 'yourpassword', // Use your actual password
-  database: 'communication_ltd',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+// This file is designed for Node.js environments
+// In browser environments, it will use simulation/mock functions
+
+const isBrowser = typeof window !== 'undefined';
+
+let pool: any = null;
+
+// Create a mock pool for browser environments
+const mockPool = {
+  execute: async (query: string, params: any[] = []) => {
+    console.log('Mock MySQL query:', query, params);
+    return [[], {}]; // Return empty results
+  },
+  getConnection: async () => {
+    return {
+      release: () => {}
+    };
+  }
+};
+
+try {
+  if (!isBrowser) {
+    // Only try to import mysql2 in Node.js environment
+    const mysql = require('mysql2/promise');
+    
+    // MySQL connection pool - will only work in Node.js
+    pool = mysql.createPool({
+      host: 'localhost',
+      user: 'appuser',
+      password: 'yourpassword',
+      database: 'communication_ltd',
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+  } else {
+    pool = mockPool;
+    console.log('Running in browser environment - using mock MySQL');
+  }
+} catch (error) {
+  console.error('MySQL import failed, using mock implementation:', error);
+  pool = mockPool;
+}
+
+// Export the pool
+export { pool };
 
 // Test connection function
 export const testConnection = async (): Promise<boolean> => {
+  if (isBrowser) {
+    console.log('Browser environment detected, using localStorage for data storage');
+    return true;
+  }
+  
   try {
     const connection = await pool.getConnection();
     console.log('Successfully connected to MySQL');
@@ -25,9 +65,59 @@ export const testConnection = async (): Promise<boolean> => {
   }
 };
 
-// Initialize database tables
+// Initialize database tables (will be mocked in browser)
 export const initializeDatabase = async (): Promise<void> => {
+  if (isBrowser) {
+    console.log('Browser environment - initializing localStorage database simulation');
+    
+    // Initialize default packages if not exist
+    const packagesStr = localStorage.getItem('packages');
+    if (!packagesStr) {
+      const defaultPackages = [
+        {
+          id: '1',
+          name: 'Basic',
+          description: 'Basic internet package for small households',
+          price: 29.99,
+          speed: 100,
+          features: ['100 Mbps', 'Unlimited data', 'Basic support']
+        },
+        {
+          id: '2',
+          name: 'Standard',
+          description: 'Standard internet package for medium households',
+          price: 49.99,
+          speed: 300,
+          features: ['300 Mbps', 'Unlimited data', 'Priority support', 'Free installation']
+        },
+        {
+          id: '3',
+          name: 'Premium',
+          description: 'Premium internet package for large households',
+          price: 79.99,
+          speed: 1000,
+          features: ['1 Gbps', 'Unlimited data', '24/7 Premium support', 'Free installation', 'Smart Wi-Fi']
+        }
+      ];
+      
+      localStorage.setItem('packages', JSON.stringify(defaultPackages));
+    }
+    
+    // Make sure we have a users array
+    if (!localStorage.getItem('users')) {
+      localStorage.setItem('users', JSON.stringify([]));
+    }
+    
+    // Make sure we have a customers array
+    if (!localStorage.getItem('customers')) {
+      localStorage.setItem('customers', JSON.stringify([]));
+    }
+    
+    return;
+  }
+  
   try {
+    // Real MySQL implementation for Node.js environment
     // Create users table
     await pool.execute(`
       CREATE TABLE IF NOT EXISTS users (

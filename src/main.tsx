@@ -18,8 +18,9 @@ setupDatabase().then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <div className="p-4 bg-red-100 text-red-700 rounded mb-4">
-        <h2 className="font-bold">Database Error</h2>
-        <p>Failed to connect to the database. Please check your MySQL connection settings.</p>
+        <h2 className="font-bold">Database Connection Error</h2>
+        <p>This application is designed to work with a MySQL database server. When running in a browser environment, it will use localStorage for demonstration.</p>
+        <p>To use MySQL properly, you need to run this application with a backend server. For instructions, check the README file.</p>
       </div>
       <App />
     </React.StrictMode>
