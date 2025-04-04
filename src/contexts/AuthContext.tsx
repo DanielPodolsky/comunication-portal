@@ -10,6 +10,7 @@ interface AuthContextType {
   isLoading: boolean;
   isSecureMode: boolean;
   setIsSecureMode: React.Dispatch<React.SetStateAction<boolean>>;
+  toggleSecureMode: () => void; // Add this new function
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,6 +20,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSecureMode, setIsSecureMode] = useState(true);
   const { toast } = useToast();
+
+  // Add the toggleSecureMode function
+  const toggleSecureMode = () => {
+    setIsSecureMode(prev => !prev);
+    toast({
+      title: `Switched to ${!isSecureMode ? "Secure" : "Vulnerable"} Mode`,
+      description: `The application is now running in ${!isSecureMode ? "secure" : "vulnerable"} mode.`,
+      variant: !isSecureMode ? "default" : "destructive"
+    });
+  };
 
   useEffect(() => {
     // Try to get user from localStorage on initial load
@@ -74,7 +85,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading, isSecureMode, setIsSecureMode }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      login, 
+      logout, 
+      isLoading, 
+      isSecureMode, 
+      setIsSecureMode,
+      toggleSecureMode // Add the new function to the context value
+    }}>
       {children}
     </AuthContext.Provider>
   );
