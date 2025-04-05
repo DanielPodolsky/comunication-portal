@@ -83,6 +83,11 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.post('/api/logout', (req, res) => {
+  // Optional: clear session/cookies here
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
 // Customer creation endpoint
 app.post('/api/customers', async (req, res) => {
   try {

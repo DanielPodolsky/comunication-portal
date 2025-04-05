@@ -149,7 +149,7 @@ export const getPackagesFromDB = async () => {
     const [rows] = await pool.execute('SELECT * FROM packages');
     return rows.map(pkg => ({
       ...pkg,
-      features: JSON.parse(pkg.features)
+      features: Array.isArray(pkg.features) ? pkg.features : []
     }));
   } catch (error) {
     console.error('getPackagesFromDB error:', error);
