@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { requestPasswordReset, verifyResetToken, resetPassword } from '@/lib/db';
 import Header from '@/components/Header';
 import PasswordRequirements from '@/components/PasswordRequirements';
 import { validatePassword } from '@/lib/passwordConfig';
@@ -22,17 +21,22 @@ const ForgotPassword = () => {
 
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!email.trim()) {
       setErrors({ email: 'Email is required' });
       return;
     }
-    
+
     setIsLoading(true);
-    
+
     try {
-      const result = await requestPasswordReset(email);
-      
+      const res = await fetch('http://localhost:3001/api/request-password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const result = await res.json();
+
       if (result.success) {
         toast({
           title: "Reset Email Sent",
@@ -66,16 +70,22 @@ const ForgotPassword = () => {
     }
   };
 
-  const handleVerifyToken = (e: React.FormEvent) => {
+  const handleVerifyToken = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!token.trim()) {
       setErrors({ token: 'Token is required' });
       return;
     }
-    
-    const isValid = verifyResetToken(token);
-    
+
+    const res = await fetch('http://localhost:3001/api/verify-reset-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json();
+    const isValid = data.success;
+
     if (isValid) {
       toast({
         title: "Token Verified",
@@ -93,28 +103,34 @@ const ForgotPassword = () => {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const newErrors: { [key: string]: string } = {};
-    
+
     if (newPassword !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
+
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.isValid) {
       newErrors.password = passwordValidation.errors[0];
     }
-    
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
-    
+
     setIsLoading(true);
-    
+
     try {
-      const success = await resetPassword(token, newPassword);
-      
+      const res = await fetch('http://localhost:3001/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword }),
+      });
+      const data = await res.json();
+      const success = data.success;
+
       if (success) {
         toast({
           title: "Password Reset Successful",
@@ -143,7 +159,7 @@ const ForgotPassword = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      
+
       <div className="flex-grow flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
@@ -172,13 +188,13 @@ const ForgotPassword = () => {
                   />
                   {errors.email && <p className="text-red-500 text-xs">{errors.email}</p>}
                 </div>
-                
+
                 <Button type="submit" className="w-full mt-6">
                   Request Reset
                 </Button>
               </form>
             )}
-            
+
             {step === 2 && (
               <form onSubmit={handleVerifyToken} className="space-y-4">
                 <div className="space-y-2">
@@ -195,13 +211,13 @@ const ForgotPassword = () => {
                     Enter the token sent to your email address.
                   </p>
                 </div>
-                
+
                 <Button type="submit" className="w-full mt-6">
                   Verify Token
                 </Button>
               </form>
             )}
-            
+
             {step === 3 && (
               <form onSubmit={handleResetPassword} className="space-y-4">
                 <div className="space-y-2">
@@ -217,7 +233,7 @@ const ForgotPassword = () => {
                   {errors.password && <p className="text-red-500 text-xs">{errors.password}</p>}
                   <PasswordRequirements password={newPassword} />
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label htmlFor="confirmPassword">Confirm Password</Label>
                   <Input
@@ -232,13 +248,13 @@ const ForgotPassword = () => {
                     <p className="text-red-500 text-xs">{errors.confirmPassword}</p>
                   )}
                 </div>
-                
+
                 <Button type="submit" className="w-full mt-6">
                   Reset Password
                 </Button>
               </form>
             )}
-            
+
             {step === 4 && (
               <div className="text-center py-4">
                 <p className="mb-4 text-green-600">

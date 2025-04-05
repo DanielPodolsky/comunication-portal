@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { changePassword } from '@/lib/db';
 import { validatePassword } from '@/lib/passwordConfig';
 import { useToast } from '@/hooks/use-toast';
 import Header from '@/components/Header';
@@ -26,50 +25,68 @@ const ChangePassword = () => {
     return <Navigate to="/login" />;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const newErrors: { [key: string]: string } = {};
-    
+
     if (!currentPassword) {
       newErrors.currentPassword = 'Current password is required';
     }
-    
+
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.isValid) {
       newErrors.newPassword = passwordValidation.errors[0];
     }
-    
+
     if (newPassword !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
     }
-    
-    const success = changePassword(user.id, currentPassword, newPassword);
-    
-    if (success) {
-      toast({
-        title: "Password Changed",
-        description: "Your password has been updated successfully",
+
+    try {
+      const res = await fetch('http://localhost:3001/api/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          currentPassword,
+          newPassword
+        })
       });
-      navigate('/dashboard');
-    } else {
+
+      const data = await res.json();
+      const success = data.success;
+
+      if (success) {
+        toast({ title: "Password Changed", description: "Your password has been updated successfully" });
+        navigate('/dashboard');
+      } else {
+        toast({
+          title: "Password Change Failed",
+          description: data.message || "Something went wrong",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      console.error('Change password error:', error);
       toast({
-        title: "Password Change Failed",
-        description: "Current password is incorrect or new password was used recently",
+        title: "Error",
+        description: "An unexpected error occurred",
         variant: "destructive"
       });
     }
   };
 
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      
+
       <div className="flex-grow flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
@@ -96,7 +113,7 @@ const ChangePassword = () => {
                   <p className="text-red-500 text-xs">{errors.currentPassword}</p>
                 )}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="newPassword">New Password</Label>
                 <Input
@@ -110,7 +127,7 @@ const ChangePassword = () => {
                 {errors.newPassword && <p className="text-red-500 text-xs">{errors.newPassword}</p>}
                 <PasswordRequirements password={newPassword} />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <Input
@@ -125,14 +142,14 @@ const ChangePassword = () => {
                   <p className="text-red-500 text-xs">{errors.confirmPassword}</p>
                 )}
               </div>
-              
+
               <div className="mt-6 flex gap-4">
                 <Button type="submit" className="flex-1">
                   Update Password
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
+                <Button
+                  type="button"
+                  variant="outline"
                   className="flex-1"
                   onClick={() => navigate('/dashboard')}
                 >

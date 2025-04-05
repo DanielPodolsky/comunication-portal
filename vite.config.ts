@@ -19,4 +19,19 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    exclude: ['mysql2', 'mysql2/promise'],
+  },
+  build: {
+    commonjsOptions: {
+      exclude: ['mysql2', 'mysql2/promise'],
+    },
+  },
+  proxy: {
+    '/api': {
+      target: 'http://localhost:3001',
+      changeOrigin: true,
+      secure: false
+    }
+  }
 }));

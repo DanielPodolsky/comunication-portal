@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { validatePassword } from '@/lib/passwordConfig';
-import { createUser, createUserVulnerable } from '@/lib/db';
 import { useAuth } from '@/contexts/AuthContext';
 import PasswordRequirements from '@/components/PasswordRequirements';
 import { useToast } from '@/hooks/use-toast';
@@ -25,45 +24,57 @@ const Register = () => {
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
-    
+
     if (!username.trim()) {
       newErrors.username = 'Username is required';
     }
-    
+
     if (!email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(email)) {
       newErrors.email = 'Email is invalid';
     }
-    
+
     const passwordValidation = validatePassword(password);
     if (!passwordValidation.isValid) {
       newErrors.password = passwordValidation.errors[0];
     }
-    
+
     if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) {
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     try {
       // Use secure or vulnerable version based on mode
-      const result = isSecureMode 
-        ? await createUser(username, email, password)
-        : await createUserVulnerable(username, email, password);
-      
+      const response = await fetch('http://localhost:3001/api/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          secureMode: isSecureMode
+        }),
+      });
+
+      const data = await response.json();
+      const result = data.success;
+
       if (result) {
         toast({
           title: "Registration Successful",
@@ -92,7 +103,7 @@ const Register = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      
+
       <div className="flex-grow flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
@@ -116,7 +127,7 @@ const Register = () => {
                 />
                 {errors.username && <p className="text-red-500 text-xs">{errors.username}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -130,7 +141,7 @@ const Register = () => {
                 />
                 {errors.email && <p className="text-red-500 text-xs">{errors.email}</p>}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
@@ -145,7 +156,7 @@ const Register = () => {
                 {errors.password && <p className="text-red-500 text-xs">{errors.password}</p>}
                 <PasswordRequirements password={password} />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <Input
@@ -161,7 +172,7 @@ const Register = () => {
                   <p className="text-red-500 text-xs">{errors.confirmPassword}</p>
                 )}
               </div>
-              
+
               <Button type="submit" className="w-full mt-6" disabled={isSubmitting}>
                 {isSubmitting ? "Registering..." : "Register"}
               </Button>
