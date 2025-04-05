@@ -1,8 +1,6 @@
-// mysql.ts – ⚠️ SERVER-ONLY — Do NOT import this in frontend code (React/Vite will explode)
+// mysql.js – ⚠️ SERVER-ONLY — Do NOT import this in frontend code (React/Vite will explode)
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const mysql = require('mysql2/promise');
+import mysql from 'mysql2/promise';
 
 // ✅ MySQL connection pool
 export const pool = mysql.createPool({
@@ -16,7 +14,7 @@ export const pool = mysql.createPool({
 });
 
 // ✅ Optional: test connection
-export const testConnection = async (): Promise<boolean> => {
+export const testConnection = async () => {
   try {
     const connection = await pool.getConnection();
     console.log('✅ Connected to MySQL');
@@ -29,7 +27,7 @@ export const testConnection = async (): Promise<boolean> => {
 };
 
 // ✅ Initialize schema if needed
-export const initializeDatabase = async (): Promise<void> => {
+export const initializeDatabase = async () => {
   try {
     // Users table
     await pool.execute(`
@@ -75,7 +73,7 @@ export const initializeDatabase = async (): Promise<void> => {
 
     // Insert default packages if not present
     const [rows] = await pool.execute('SELECT COUNT(*) as count FROM packages');
-    const count = (rows as any)[0].count;
+    const count = rows[0].count;
 
     if (count === 0) {
       await pool.execute(`

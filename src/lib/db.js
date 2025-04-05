@@ -1,4 +1,4 @@
-import { pool } from './mysql';
+import { pool } from './mysql.js';
 import crypto from 'crypto';
 
 // Generate a secure random string

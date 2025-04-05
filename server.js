@@ -5,19 +5,16 @@ import crypto from 'crypto';
 
 const app = express();
 
-app.use(cors({
-  origin: 'http://localhost:8080',
-  credentials: true,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
 // ✅ THEN body parser
 app.use(express.json());
 
+app.use(cors({
+  origin: 'http://localhost:8080', // 👈 MUST match your frontend exactly
+  credentials: true                // 👈 REQUIRED for sending cookies/sessions
+}));
 
-import { initializeDatabase, pool } from './src/lib/mysql';
-import { createUser, loginUser, getPackagesFromDB, createCustomer } from './src/lib/db';
+import { initializeDatabase, pool } from './src/lib/mysql.js';
+import { createUser, loginUser, getPackagesFromDB, createCustomer } from './src/lib/db.js';
 
 // Initialize database
 initializeDatabase().then(() => {
