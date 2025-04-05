@@ -18,6 +18,7 @@ const apiRequest = async (endpoint: string, method: string = 'GET', data: any = 
       options.body = JSON.stringify(data);
     }
 
+    console.log(`Making ${method} request to ${API_BASE_URL}${endpoint}`);
     const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
     const result = await response.json();
     
@@ -30,6 +31,11 @@ const apiRequest = async (endpoint: string, method: string = 'GET', data: any = 
     console.error('API request error:', error);
     throw error;
   }
+};
+
+// Health check - test connectivity to the API
+export const checkApiHealth = async () => {
+  return await apiRequest('/health');
 };
 
 // Get all packages
@@ -62,9 +68,4 @@ export const createCustomer = async (customerData: {
 // Get customers by user ID
 export const getCustomersByUserId = async (userId: string) => {
   return await apiRequest(`/customers/${userId}`);
-};
-
-// Health check
-export const checkApiHealth = async () => {
-  return await apiRequest('/health');
 };
