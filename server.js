@@ -1,7 +1,7 @@
 
 import express from 'express';
 import cors from 'cors';
-import { initializeDatabase } from './src/lib/mysql';
+import { initializeDatabase } from './src/lib/mysql.js';
 
 const app = express();
 
