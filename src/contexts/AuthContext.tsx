@@ -29,7 +29,7 @@ const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isSecureMode, setIsSecureMode] = useState(true);
   const { toast } = useToast();
 
-  // Toggle secure/vulnerable mode (used for demo)
+  // Toggle secure/vulnerable mode
   const toggleSecureMode = () => {
     setIsSecureMode(prev => !prev);
     toast({

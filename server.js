@@ -14,7 +14,7 @@ app.use(cors({
 }));
 
 import { initializeDatabase, pool } from './src/lib/mysql.js';
-import { createUser, loginUser, getPackagesFromDB, createCustomer } from './src/lib/db.js';
+import { createUser, loginUser, loginUserVulnerable, getPackagesFromDB, createCustomer, createCustomerVulnerable } from './src/lib/db.js';
 
 // Initialize database
 initializeDatabase().then(() => {
@@ -62,13 +62,16 @@ app.post('/api/register', async (req, res) => {
 // User login endpoint
 app.post('/api/login', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, secureMode } = req.body;
+    console.log('🔑 Login attempt:', { username, password, secureMode });
 
     if (!username || !password) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const user = await loginUser(username, password);
+    const user = secureMode
+      ? await loginUser(username, password)
+      : await loginUserVulnerable(username, password);
 
     if (user) {
       // Don't return sensitive data
@@ -91,13 +94,16 @@ app.post('/api/logout', (req, res) => {
 // Customer creation endpoint
 app.post('/api/customers', async (req, res) => {
   try {
-    const { name, email, phone, address, packageId, userId } = req.body;
+    const { name, email, phone, address, packageId, userId, secureMode } = req.body;
 
     if (!name || !email || !phone || !address || !packageId || !userId) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const customer = await createCustomer({ name, email, phone, address, packageId, userId });
+    const customer = secureMode
+      ? await createCustomer({ name, email, phone, address, packageId, userId })
+      : await createCustomerVulnerable({ name, email, phone, address, packageId, userId });
+
 
     if (customer) {
       return res.json({ success: true, customer });

@@ -20,17 +20,17 @@ const Index = () => {
           <p className="text-xl text-gray-600 max-w-3xl mx-auto">
             Your trusted partner for high-speed internet solutions. Explore our packages and find the perfect connection for your needs.
           </p>
-          
+
           {!user && (
             <div className="mt-8 flex justify-center gap-4">
-              <Button 
+              <Button
                 onClick={() => navigate('/register')}
                 className="bg-brand-blue hover:bg-blue-700 text-white"
                 size="lg"
               >
                 Sign Up Now
               </Button>
-              <Button 
+              <Button
                 onClick={() => navigate('/login')}
                 variant="outline"
                 size="lg"
@@ -44,7 +44,7 @@ const Index = () => {
         {user && (
           <div className="mb-12 p-6 bg-white rounded-lg shadow-md">
             <h2 className="text-2xl font-semibold mb-4 text-brand-blue">Dashboard</h2>
-            <Button 
+            <Button
               onClick={() => navigate('/dashboard')}
               className="bg-brand-blue hover:bg-blue-700 text-white"
             >
@@ -55,7 +55,7 @@ const Index = () => {
 
         <section className="mb-12">
           <h2 className="text-2xl font-semibold mb-6 text-center">Our Internet Packages</h2>
-          
+
           <div className="grid md:grid-cols-3 gap-6">
             <Card className="transition-all hover:shadow-lg">
               <CardHeader>
@@ -191,7 +191,7 @@ const Index = () => {
       <footer className="bg-gray-800 text-white py-6">
         <div className="container mx-auto px-4">
           <div className="text-center">
-            <p>© 2023 Comunication_LTD. All rights reserved.</p>
+            <p>© 2025 Comunication_LTD. All rights reserved.</p>
             <p className="text-sm text-gray-400 mt-2">
               This is a demo project showcasing secure authentication and customer management systems.
             </p>

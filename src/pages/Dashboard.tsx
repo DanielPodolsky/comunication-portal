@@ -59,11 +59,11 @@ const Dashboard = () => {
     }
 
     try {
-      const endpoint = isSecureMode ? '/api/customers' : '/api/customers'; // Same endpoint for both modes
+      const endpoint = isSecureMode ? '/api/customers' : '/api/customers'; // Same endpoint for both modes ## FIXME: same endpoint so just write one
       const res = await fetch(`http://localhost:3001${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, phone, address, packageId, userId: user.id })
+        body: JSON.stringify({ name, email, phone, address, packageId, userId: user.id, isSecureMode })
       });
 
       const data = await res.json();

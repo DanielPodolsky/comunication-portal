@@ -62,52 +62,92 @@ export const createUser = async (username, email, password) => {
 };
 
 // ==========================
-// 🔐 User Login
+// 🔐 SECURE Login
 // ==========================
 export const loginUser = async (username, password) => {
   try {
-    const [rows] = await pool.execute(
-      'SELECT * FROM users WHERE username = ?',
+    // First, get the salt for the user
+    const [users] = await pool.execute(
+      'SELECT id, salt FROM users WHERE username = ?',
       [username]
     );
 
-    if (rows.length === 0) return null;
+    if (users.length === 0) return null;
+    const { salt, id } = users[0];
 
-    const user = rows[0];
+    // Hash with the retrieved salt
+    const { hash } = await hashPassword(password, salt);
 
-    if (user.locked) return null;
+    // Now verify both username and passwordHash in DB
+    const [rows] = await pool.execute(
+      'SELECT * FROM users WHERE username = ? AND passwordHash = ?',
+      [username, hash]
+    );
 
-    const { hash } = await hashPassword(password, user.salt);
-
-    if (hash === user.passwordHash) {
+    if (rows.length === 0) {
+      // wrong password: increment failed login attempts
       await pool.execute(
-        'UPDATE users SET failedLoginAttempts = 0 WHERE id = ?',
-        [user.id]
+        'UPDATE users SET failedLoginAttempts = failedLoginAttempts + 1 WHERE id = ?',
+        [id]
       );
 
-      return {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        failedLoginAttempts: 0,
-        locked: false
-      };
-    } else {
-      const attempts = user.failedLoginAttempts + 1;
-      const locked = attempts >= 3;
-
-      await pool.execute(
-        'UPDATE users SET failedLoginAttempts = ?, locked = ? WHERE id = ?',
-        [attempts, locked, user.id]
-      );
+      // Check if it needs to be locked
+      const [[updatedUser]] = await pool.execute('SELECT failedLoginAttempts FROM users WHERE id = ?', [id]);
+      if (updatedUser.failedLoginAttempts >= 3) {
+        await pool.execute('UPDATE users SET locked = true WHERE id = ?', [id]);
+      }
 
       return null;
     }
+
+    const user = rows[0];
+    if (user.locked) return null;
+
+    // success: reset failed attempts
+    await pool.execute('UPDATE users SET failedLoginAttempts = 0 WHERE id = ?', [user.id]);
+
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      failedLoginAttempts: 0,
+      locked: false
+    };
+
   } catch (error) {
     console.error('loginUser error:', error);
     throw error;
   }
 };
+
+// ==========================
+// 💀 VULNERABLE Login (SQL Injection Demo)
+// ==========================
+export const loginUserVulnerable = async (username, _password) => {
+  try {
+    // this allows injection!
+    const sql = `SELECT * FROM users WHERE username = '${username}'`;
+    console.log('🔥 VULNERABLE SQL:', sql);
+
+    const [rows] = await pool.query(sql);
+    console.log('📦 VULNERABLE RESULT:', rows);
+
+    if (rows.length === 0) return null;
+
+    const user = rows[0];
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      failedLoginAttempts: user.failedLoginAttempts,
+      locked: user.locked,
+    };
+  } catch (error) {
+    console.error('loginUserVulnerable error:', error);
+    throw error;
+  }
+};
+
 
 // ==========================
 // 🧾 Create Customer (Real DB)
@@ -141,6 +181,34 @@ export const createCustomer = async (customerData) => {
   }
 };
 
+export const createCustomerVulnerable = async (customerData) => {
+  try {
+    const id = generateUUID();
+
+    // 🔓 Don't sanitize input in vulnerable mode
+    const unsanitized = {
+      name: customerData.name,
+      email: customerData.email,
+      phone: customerData.phone,
+      address: customerData.address,
+      packageId: customerData.packageId,
+      userId: customerData.userId
+    };
+
+    await pool.execute(
+      `INSERT INTO customers (id, name, email, phone, address, packageId, userId)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, unsanitized.name, unsanitized.email, unsanitized.phone, unsanitized.address, unsanitized.packageId, unsanitized.userId]
+    );
+
+    return { id, ...unsanitized };
+  } catch (error) {
+    console.error('createCustomerVulnerable error:', error);
+    return null;
+  }
+};
+
+
 // ==========================
 // 📦 Get Packages (Real DB)
 // ==========================
@@ -157,12 +225,6 @@ export const getPackagesFromDB = async () => {
   }
 };
 
-// ==========================
-// Optional: export same functions under "vulnerable" aliases for toggling
-// ==========================
-export const createUserVulnerable = createUser;
-export const loginUserVulnerable = loginUser;
-export const createCustomerVulnerable = createCustomer;
 
 // ==========================
 // 🛠️ TODO: Implement as needed
