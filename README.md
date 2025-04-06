@@ -1,10 +1,3 @@
-
-# Welcome to your Lovable project
-
-## Project info
-
-**URL**: https://lovable.dev/projects/213c7402-3255-4718-accd-3042b1990914
-
 ## How to set up this project with MySQL locally
 
 ### Prerequisites
