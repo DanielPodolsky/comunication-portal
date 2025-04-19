@@ -13,18 +13,20 @@ const generateUUID = () => {
 
 // Hash password using PBKDF2
 export const hashPassword = async (password, salt) => {
-  const generatedSalt = salt || generateRandomString(16);
+  const generatedSalt = salt || crypto.randomBytes(16).toString('hex');
 
-  return new Promise((resolve, reject) => {
-    crypto.pbkdf2(password, generatedSalt, 100000, 64, 'sha512', (err, derivedKey) => {
-      if (err) return reject(err);
-      resolve({
-        hash: derivedKey.toString('hex'),
-        salt: generatedSalt
-      });
-    });
-  });
+  // Use SHA-1 for hashing
+  const hash = crypto
+    .createHash('sha1')
+    .update(password + generatedSalt) // password first, then salt
+    .digest('hex');
+
+  return {
+    hash,
+    salt: generatedSalt
+  };
 };
+
 
 // ==========================
 // 👤 User Registration
@@ -64,91 +66,67 @@ export const createUser = async (username, email, password) => {
 // ==========================
 // 🔐 SECURE Login
 // ==========================
-export const loginUser = async (username, password) => {
+// Update this function in your db.js file
+
+export async function loginUser(username, password) {
   try {
-    // First, get the salt for the user
-    const [users] = await pool.execute(
-      'SELECT id, salt FROM users WHERE username = ?',
-      [username]
-    );
-
+    // Fetch the user
+    const [users] = await pool.execute('SELECT * FROM users WHERE username = ?', [username]);
     if (users.length === 0) return null;
-    const { salt, id } = users[0];
 
-    // Hash with the retrieved salt
-    const { hash } = await hashPassword(password, salt);
+    const user = users[0];
 
-    // Now verify both username and passwordHash in DB
-    const [rows] = await pool.execute(
-      'SELECT * FROM users WHERE username = ? AND passwordHash = ?',
-      [username, hash]
-    );
+    // Use SHA-1 for password verification
+    const hash = crypto
+      .createHash('sha1')
+      .update(password + user.salt)
+      .digest('hex');
 
-    if (rows.length === 0) {
-      // wrong password: increment failed login attempts
-      await pool.execute(
-        'UPDATE users SET failedLoginAttempts = failedLoginAttempts + 1 WHERE id = ?',
-        [id]
-      );
+    console.log('Login attempt - checking password hash matches');
+    console.log('Generated hash:', hash);
+    console.log('Stored hash:', user.passwordHash);
 
-      // Check if it needs to be locked
-      const [[updatedUser]] = await pool.execute('SELECT failedLoginAttempts FROM users WHERE id = ?', [id]);
-      if (updatedUser.failedLoginAttempts >= 3) {
-        await pool.execute('UPDATE users SET locked = true WHERE id = ?', [id]);
-      }
-
-      return null;
+    // Check if the hash matches
+    if (user.passwordHash === hash) {
+      console.log('Login successful - password hash matched');
+      return user;
     }
 
-    const user = rows[0];
-    if (user.locked) return null;
-
-    // success: reset failed attempts
-    await pool.execute('UPDATE users SET failedLoginAttempts = 0 WHERE id = ?', [user.id]);
-
-    return {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      failedLoginAttempts: 0,
-      locked: false
-    };
-
+    console.log('Login failed - password hash did not match');
+    return null;
   } catch (error) {
-    console.error('loginUser error:', error);
+    console.error('Login error:', error);
     throw error;
   }
-};
+}
 
 // ==========================
 // 💀 VULNERABLE Login (SQL Injection Demo)
 // ==========================
-export const loginUserVulnerable = async (username, _password) => {
+export async function loginUserVulnerable(username, password) {
   try {
-    // this allows injection!
-    const sql = `SELECT * FROM users WHERE username = '${username}'`;
-    console.log('🔥 VULNERABLE SQL:', sql);
+    // Using simple string concatenation is vulnerable to SQL injection
+    const [users] = await pool.query(`SELECT * FROM users WHERE username = '${username}'`);
+    if (users.length === 0) return null;
 
-    const [rows] = await pool.query(sql);
-    console.log('📦 VULNERABLE RESULT:', rows);
+    const user = users[0];
 
-    if (rows.length === 0) return null;
+    // Use SHA-1 for password verification
+    const hash = crypto
+      .createHash('sha1')
+      .update(password + user.salt)
+      .digest('hex');
 
-    const user = rows[0];
-    return {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      failedLoginAttempts: user.failedLoginAttempts,
-      locked: user.locked,
-    };
+    if (user.passwordHash === hash) {
+      return user;
+    }
+
+    return null;
   } catch (error) {
-    console.error('loginUserVulnerable error:', error);
+    console.error('Vulnerable login error:', error);
     throw error;
   }
-};
-
-
+}
 // ==========================
 // 🧾 Create Customer (Real DB)
 // ==========================

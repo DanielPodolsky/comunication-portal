@@ -1,9 +1,16 @@
-
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const app = express();
+
+// Temporary in-memory token store (for demo)
+// Replace with a database table for production
+const resetTokens = {};
+
 
 // ✅ THEN body parser
 app.use(express.json());
@@ -161,16 +168,52 @@ app.post('/api/request-password-reset', async (req, res) => {
     if (users.length === 0) return res.json({ success: false, message: 'Email not found' });
 
     const user = users[0];
-    const token = crypto.randomBytes(20).toString('hex');
-    const expiry = Date.now() + 1000 * 60 * 10; // 10 minutes
 
+    // Generate a random value
+    const rawToken = crypto.randomBytes(16).toString('hex');
+
+    // Hash the token using SHA-1 algorithm as required
+    const hashedToken = crypto
+      .createHash('sha1')
+      .update(rawToken)
+      .digest('hex');
+
+    const expiry = Date.now() + 1000 * 60 * 60; // 1 hour expiry
+
+    // Store the SHA-1 hashed token in the database
     await pool.execute(
       'UPDATE users SET lastResetToken = ?, lastResetTokenExpiry = ? WHERE id = ?',
-      [token, expiry, user.id]
+      [hashedToken, expiry, user.id]
     );
 
-    // TODO: in production, send email. For demo, return token
-    res.json({ success: true, token });
+    // In a real implementation, send the raw token to user's email
+    // For demo purposes, return both tokens (in production, only return success)
+
+    const emailConfig = {
+      service: process.env.EMAIL_SERVICE,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
+      }
+    };
+
+    const transporter = nodemailer.createTransport(emailConfig);
+
+    await transporter.sendMail({
+      to: email,
+      subject: 'שכח סיסמא - קוד איפוס',
+      html: `
+        <h2>שכח סיסמא</h2>
+        <p>הערך האקראי שלך הוא:</p>
+        <h3>${rawToken}</h3>
+        <p>קוד זה תקף למשך שעה אחת.</p>
+      `
+    });
+
+    res.json({
+      success: true,
+      message: 'Reset token has been sent to your email',
+    });
   } catch (err) {
     console.error('Error generating reset token:', err);
     res.status(500).json({ success: false, message: 'Internal server error' });
@@ -182,70 +225,150 @@ app.post('/api/verify-reset-token', async (req, res) => {
   if (!token) return res.status(400).json({ success: false, message: 'Token required' });
 
   try {
+    // Hash the user provided token using SHA-1
+    const hashedUserToken = crypto
+      .createHash('sha1')
+      .update(token)
+      .digest('hex');
+
+    // Look up the hashed token in the database
     const [users] = await pool.execute(
       'SELECT * FROM users WHERE lastResetToken = ? AND lastResetTokenExpiry > ?',
-      [token, Date.now()]
+      [hashedUserToken, Date.now()]
     );
 
     if (users.length === 0) {
       return res.status(401).json({ success: false, message: 'Invalid or expired token' });
     }
 
-    res.json({ success: true });
+    res.json({
+      success: true,
+      userId: users[0].id
+    });
   } catch (err) {
     console.error('Error verifying token:', err);
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
+// Modified reset password endpoint to use PBKDF2 properly
 app.post('/api/reset-password', async (req, res) => {
-  const { token, newPassword } = req.body;
-  if (!token || !newPassword) {
-    return res.status(400).json({ success: false, message: 'Token and password required' });
+  const { token, newPassword, userId } = req.body;
+
+  // Validate all required fields
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      message: 'Reset token is required'
+    });
   }
 
+  if (!newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'New password is required'
+    });
+  }
+
+  // Make userId optional - look it up by token if not provided
+  let targetUserId = userId;
+
   try {
+    // Hash the user provided token using SHA-1 for verification
+    const hashedUserToken = crypto
+      .createHash('sha1')
+      .update(token)
+      .digest('hex');
+
+    // If userId not provided, look it up by token
+    if (!targetUserId) {
+      const [users] = await pool.execute(
+        'SELECT id FROM users WHERE lastResetToken = ? AND lastResetTokenExpiry > ?',
+        [hashedUserToken, Date.now()]
+      );
+
+      if (users.length === 0) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired token'
+        });
+      }
+
+      targetUserId = users[0].id;
+      console.log(`Found userId ${targetUserId} for reset token`);
+    }
+
+    // Look up the user with the hashed token
     const [users] = await pool.execute(
-      'SELECT * FROM users WHERE lastResetToken = ? AND lastResetTokenExpiry > ?',
-      [token, Date.now()]
+      'SELECT * FROM users WHERE id = ? AND lastResetToken = ? AND lastResetTokenExpiry > ?',
+      [targetUserId, hashedUserToken, Date.now()]
     );
 
     if (users.length === 0) {
-      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token for this user'
+      });
     }
 
     const user = users[0];
 
-    // Hash new password
+    // Generate a new salt
     const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(newPassword, salt, 100000, 64, 'sha512').toString('hex');
 
-    const newHistory = JSON.stringify([{ hash, createdAt: Date.now() }]);
+    // Use SHA-1 for password hashing, matching the format in loginUser function
+    const hash = crypto
+      .createHash('sha1')
+      .update(newPassword + salt) // password first, then salt
+      .digest('hex');
 
+    console.log('Reset Password - Debug Information:');
+    console.log('New Password:', newPassword);
+    console.log('Generated Salt:', salt);
+    console.log('Generated Hash:', hash);
+
+    // Create password history or update existing one
+    let passwordHistory = [];
+    if (user.passwordHistory) {
+      try {
+        passwordHistory = JSON.parse(user.passwordHistory);
+      } catch (e) {
+        console.warn('Invalid password history format, resetting');
+      }
+    }
+
+    passwordHistory.unshift({ hash, createdAt: Date.now() });
+    const newHistory = JSON.stringify(passwordHistory);
+
+    // Update user record with SHA-1 hashed password
     await pool.execute(`
       UPDATE users 
       SET passwordHash = ?, salt = ?, passwordHistory = ?, lastResetToken = NULL, lastResetTokenExpiry = NULL 
       WHERE id = ?
     `, [hash, salt, newHistory, user.id]);
 
-    res.json({ success: true });
+    console.log(`Password reset successfully for user ${user.id} using SHA-1`);
+    res.json({ success: true, message: 'Password has been reset successfully' });
   } catch (err) {
     console.error('Error resetting password:', err);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: err.message
+    });
+  }
+});
+app.get('/api/me', (req, res) => {
+  if (req.session && req.session.user) {
+    res.json({
+      success: true,
+      user: req.session.user
+    });
+  } else {
+    res.status(401).json({ success: false, message: 'Not logged in' });
   }
 });
 
-app.get('/api/me', (req, res) => {
-  // Optional: use cookies/session here
-  res.json({
-    success: true,
-    user: {
-      id: '123',
-      username: 'demo_user',
-      email: 'demo@example.com'
-    }
-  });
-});
 
 // Start server
 const PORT = 3001;
