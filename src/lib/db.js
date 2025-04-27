@@ -1,6 +1,6 @@
 import { pool } from './mysql.js';
 import crypto from 'crypto';
-
+import { getPasswordConfig } from './passwordConfig.js';
 // Generate a secure random string
 const generateRandomString = (length = 16) => {
   return crypto.randomBytes(length).toString('hex');
@@ -11,7 +11,6 @@ const generateUUID = () => {
   return crypto.randomUUID();
 };
 
-// Hash password using PBKDF2
 export const hashPassword = async (password, salt) => {
   const generatedSalt = salt || crypto.randomBytes(16).toString('hex');
 
@@ -43,7 +42,7 @@ export const createUser = async (username, email, password) => {
     const id = generateUUID();
     const { hash, salt } = await hashPassword(password);
 
-    const passwordHistory = JSON.stringify([{ hash, createdAt: Date.now() }]);
+    const passwordHistory = JSON.stringify([{ hash, createdAt: Date.now() }]); // CHECK LATER
 
     await pool.execute(`
       INSERT INTO users (id, username, email, passwordHash, salt, passwordHistory, failedLoginAttempts, locked)
@@ -67,66 +66,109 @@ export const createUser = async (username, email, password) => {
 // 🔐 SECURE Login
 // ==========================
 // Update this function in your db.js file
-
 export async function loginUser(username, password) {
   try {
-    // Fetch the user
+    const config = getPasswordConfig();
+
     const [users] = await pool.execute('SELECT * FROM users WHERE username = ?', [username]);
-    if (users.length === 0) return null;
+    if (users.length === 0) {
+      return { success: false, error: "Invalid username or password" };
+    }
 
-    const user = users[0];
+    let user = users[0];
 
-    // Use SHA-1 for password verification
+    // 🚨 Check if temporarily locked
+    if (user.lockedUntil && Date.now() < user.lockedUntil) {
+      const secondsLeft = Math.floor((user.lockedUntil - Date.now()) / 1000);
+      return { success: false, error: `Account temporarily locked. Try again in ${secondsLeft} seconds`, locked: true };
+    }
+
+    // 🚀 If lock has expired, clean it
+    if (user.lockedUntil && Date.now() >= user.lockedUntil) {
+      await pool.execute(
+        `UPDATE users SET failedLoginAttempts = 0, lockedUntil = NULL WHERE id = ?`,
+        [user.id]
+      );
+      user.failedLoginAttempts = 0;
+      user.lockedUntil = null;
+    }
+
     const hash = crypto
       .createHash('sha1')
       .update(password + user.salt)
       .digest('hex');
 
-    console.log('Login attempt - checking password hash matches');
-    console.log('Generated hash:', hash);
-    console.log('Stored hash:', user.passwordHash);
-
-    // Check if the hash matches
     if (user.passwordHash === hash) {
-      console.log('Login successful - password hash matched');
-      return user;
-    }
+      // ✅ Successful login → Reset failed attempts
+      await pool.execute(
+        `UPDATE users SET failedLoginAttempts = 0, lockedUntil = NULL WHERE id = ?`,
+        [user.id]
+      );
+      return { success: true, user };
+    } else {
+      // ❌ Wrong password
+      const newFailedAttempts = user.failedLoginAttempts + 1;
 
-    console.log('Login failed - password hash did not match');
-    return null;
+      if (newFailedAttempts >= config.maxLoginAttempts) {
+        // 🚨 Lock account for 3 minutes
+        const threeMinutesFromNow = Date.now() + 3 * 60 * 1000;
+
+        await pool.execute(
+          `UPDATE users SET failedLoginAttempts = ?, lockedUntil = ? WHERE id = ?`,
+          [newFailedAttempts, threeMinutesFromNow, user.id]
+        );
+
+        return { success: false, error: `Account locked after ${config.maxLoginAttempts} failed attempts. Try again in 3 minutes.`, locked: true };
+      } else {
+        await pool.execute(
+          `UPDATE users SET failedLoginAttempts = ? WHERE id = ?`,
+          [newFailedAttempts, user.id]
+        );
+
+        // 🛠️ Refetch the updated user failedLoginAttempts (optional but cleaner)
+        // const [updatedUsers] = await pool.execute('SELECT * FROM users WHERE username = ?', [username]);
+        // user = updatedUsers[0];
+
+        return { success: false, error: `Invalid password. ${config.maxLoginAttempts - newFailedAttempts} attempts left.` };
+      }
+    }
   } catch (error) {
     console.error('Login error:', error);
-    throw error;
+    return { success: false, error: 'Internal server error' };
   }
 }
+
+
 
 // ==========================
 // 💀 VULNERABLE Login (SQL Injection Demo)
 // ==========================
 export async function loginUserVulnerable(username, password) {
   try {
-    // Using simple string concatenation is vulnerable to SQL injection
-    const [users] = await pool.query(`SELECT * FROM users WHERE username = '${username}'`);
-    if (users.length === 0) return null;
+    // 🚨 VULNERABLE: SQL Injection possible here
+    const [users] = await pool.query(`
+      SELECT * FROM users WHERE username = '${username}'
+    `);
+
+    if (users.length === 0) {
+      return { success: false, error: "Invalid username" };
+    }
 
     const user = users[0];
 
-    // Use SHA-1 for password verification
-    const hash = crypto
-      .createHash('sha1')
-      .update(password + user.salt)
-      .digest('hex');
+    // 🔥 PRINT the user that was fetched via injection
+    console.log('🚨 SQL Injection successful - User fetched:', user);
 
-    if (user.passwordHash === hash) {
-      return user;
-    }
-
-    return null;
+    // 🛑 Trust the database result blindly
+    return { success: true, user };
   } catch (error) {
     console.error('Vulnerable login error:', error);
-    throw error;
+    return { success: false, error: "Internal server error" };
   }
 }
+
+
+
 // ==========================
 // 🧾 Create Customer (Real DB)
 // ==========================

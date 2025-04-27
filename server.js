@@ -76,16 +76,15 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const user = secureMode
+    const result = secureMode
       ? await loginUser(username, password)
       : await loginUserVulnerable(username, password);
 
-    if (user) {
-      // Don't return sensitive data
-      const { passwordHash, salt, passwordHistory, ...safeUser } = user;
+    if (result.success) {
+      const { passwordHash, salt, passwordHistory, ...safeUser } = result.user;
       return res.json({ success: true, user: safeUser });
     } else {
-      return res.status(401).json({ success: false, message: 'Invalid username or password' });
+      return res.status(401).json({ success: false, message: result.error || 'Invalid username or password' });
     }
   } catch (error) {
     console.error('Login error:', error);
@@ -358,6 +357,7 @@ app.post('/api/reset-password', async (req, res) => {
     });
   }
 });
+
 app.get('/api/me', (req, res) => {
   if (req.session && req.session.user) {
     res.json({

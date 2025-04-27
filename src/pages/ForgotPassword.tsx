@@ -40,7 +40,7 @@ const ForgotPassword = () => {
       if (result.success) {
         toast({
           title: "Reset Email Sent",
-          description: "Check your email for the reset token",
+          description: "If the email you entered is associated with an account, a password reset code has been sent.",
         });
         // For demo purposes, we'll show the token directly
         if (result.token) {
@@ -54,7 +54,7 @@ const ForgotPassword = () => {
       } else {
         toast({
           title: "Error",
-          description: "Email not found in our records",
+          description: "If the email you entered is associated with an account, a password reset code has been sent.",
           variant: "destructive"
         });
       }
@@ -62,7 +62,7 @@ const ForgotPassword = () => {
       console.error('Reset request error:', error);
       toast({
         title: "Error",
-        description: "Failed to request password reset",
+        description: "If the email you entered is associated with an account, a password reset code has been sent.",
         variant: "destructive"
       });
     } finally {

@@ -41,7 +41,8 @@ export const initializeDatabase = async () => {
         lastResetToken VARCHAR(255),
         lastResetTokenExpiry BIGINT,
         failedLoginAttempts INT NOT NULL DEFAULT 0,
-        locked BOOLEAN NOT NULL DEFAULT FALSE
+        locked BOOLEAN NOT NULL DEFAULT FALSE,
+        lockedUntil BIGINT DEFAULT NULL -- 🔥 New field for temporary lockout
       )
     `);
 

@@ -1,5 +1,5 @@
 
-import { initializeDatabase } from './mysql';
+import { initializeDatabase } from './mysql.js';
 
 // Function to initialize the database
 export const setupDatabase = async () => {
