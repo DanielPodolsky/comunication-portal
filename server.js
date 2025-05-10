@@ -21,7 +21,7 @@ app.use(cors({
 }));
 
 import { initializeDatabase, pool } from './src/lib/mysql.js';
-import { createUser, loginUser, loginUserVulnerable, getPackagesFromDB, createCustomer, createCustomerVulnerable } from './src/lib/db.js';
+import { createUser, loginUser, loginUserVulnerable, getPackagesFromDB, createCustomer, createCustomerVulnerable, createUserVulnerable } from './src/lib/db.js';
 
 // Initialize database
 initializeDatabase().then(() => {
@@ -45,17 +45,18 @@ app.get('/api/packages', async (req, res) => {
 // User registration endpoint
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, secureMode } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    const user = await createUser(username, email, password);
+    const result = secureMode
+      ? await createUser(username, email, password)
+      : await createUserVulnerable(username, email, password);
 
-    if (user) {
-      // Don't return sensitive data like passwordHash
-      const { passwordHash, salt, passwordHistory, ...safeUser } = user;
+    if (result) {
+      const { passwordHash, salt, passwordHistory, ...safeUser } = result;
       return res.json({ success: true, user: safeUser });
     } else {
       return res.status(409).json({ success: false, message: 'Username or email already exists' });
@@ -81,8 +82,11 @@ app.post('/api/login', async (req, res) => {
       : await loginUserVulnerable(username, password);
 
     if (result.success) {
-      const { passwordHash, salt, passwordHistory, ...safeUser } = result.user;
-      return res.json({ success: true, user: safeUser });
+      if (secureMode) {
+        const { passwordHash, salt, passwordHistory, ...safeUser } = result.user;
+        return res.json({ success: true, user: safeUser });
+      }
+      return res.json({ success: true, users: result.users });
     } else {
       return res.status(401).json({ success: false, message: result.error || 'Invalid username or password' });
     }
@@ -163,6 +167,7 @@ app.post('/api/request-password-reset', async (req, res) => {
   if (!email) return res.status(400).json({ success: false, message: 'Email is required' });
 
   try {
+    const SECRET_KEY = process.env.RESET_TOKEN_SECRET;
     const [users] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
     if (users.length === 0) return res.json({ success: false, message: 'Email not found' });
 
@@ -172,10 +177,9 @@ app.post('/api/request-password-reset', async (req, res) => {
     const rawToken = crypto.randomBytes(16).toString('hex');
 
     // Hash the token using SHA-1 algorithm as required
-    const hashedToken = crypto
-      .createHash('sha1')
-      .update(rawToken)
-      .digest('hex');
+    const hmac = crypto.createHmac('sha1', SECRET_KEY);
+    hmac.update(rawToken);
+    const hashedToken = hmac.digest('hex');
 
     const expiry = Date.now() + 1000 * 60 * 60; // 1 hour expiry
 
@@ -184,9 +188,6 @@ app.post('/api/request-password-reset', async (req, res) => {
       'UPDATE users SET lastResetToken = ?, lastResetTokenExpiry = ? WHERE id = ?',
       [hashedToken, expiry, user.id]
     );
-
-    // In a real implementation, send the raw token to user's email
-    // For demo purposes, return both tokens (in production, only return success)
 
     const emailConfig = {
       service: process.env.EMAIL_SERVICE,
@@ -225,10 +226,10 @@ app.post('/api/verify-reset-token', async (req, res) => {
 
   try {
     // Hash the user provided token using SHA-1
-    const hashedUserToken = crypto
-      .createHash('sha1')
-      .update(token)
-      .digest('hex');
+    const SECRET_KEY = process.env.RESET_TOKEN_SECRET;
+    const hmac = crypto.createHmac('sha1', SECRET_KEY);
+    hmac.update(token);
+    const hashedUserToken = hmac.digest('hex');
 
     // Look up the hashed token in the database
     const [users] = await pool.execute(
@@ -274,10 +275,10 @@ app.post('/api/reset-password', async (req, res) => {
 
   try {
     // Hash the user provided token using SHA-1 for verification
-    const hashedUserToken = crypto
-      .createHash('sha1')
-      .update(token)
-      .digest('hex');
+    const SECRET_KEY = process.env.RESET_TOKEN_SECRET;
+    const hmac = crypto.createHmac('sha1', SECRET_KEY);
+    hmac.update(token);
+    const hashedUserToken = hmac.digest('hex');
 
     // If userId not provided, look it up by token
     if (!targetUserId) {
@@ -316,10 +317,9 @@ app.post('/api/reset-password', async (req, res) => {
     const salt = crypto.randomBytes(16).toString('hex');
 
     // Use SHA-1 for password hashing, matching the format in loginUser function
-    const hash = crypto
-      .createHash('sha1')
-      .update(newPassword + salt) // password first, then salt
-      .digest('hex');
+    const hmac2 = crypto.createHmac('sha1', salt); // salt is the key
+    hmac2.update(newPassword);
+    const hash = hmac2.digest('hex');
 
     console.log('Reset Password - Debug Information:');
     console.log('New Password:', newPassword);

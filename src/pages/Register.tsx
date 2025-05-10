@@ -29,6 +29,10 @@ const Register = () => {
       newErrors.username = 'Username is required';
     }
 
+    if (/\s/.test(username)) {
+      newErrors.username = 'Username cannot contain spaces';
+    }
+
     if (!email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(email)) {

@@ -87,8 +87,9 @@ const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       const data = await response.json();
 
-      if (response.ok && data.user) {
-        setUser(data.user);
+      if (response.ok) {
+        const users = data.user ? data.user : data.users[0];
+        setUser(users);
         return true;
       } else {
         toast({

@@ -1,6 +1,8 @@
 import { pool } from './mysql.js';
 import crypto from 'crypto';
 import { getPasswordConfig } from './passwordConfig.js';
+import dotenv from 'dotenv';
+dotenv.config();
 // Generate a secure random string
 const generateRandomString = (length = 16) => {
   return crypto.randomBytes(length).toString('hex');
@@ -11,14 +13,13 @@ const generateUUID = () => {
   return crypto.randomUUID();
 };
 
-export const hashPassword = async (password, salt) => {
-  const generatedSalt = salt || crypto.randomBytes(16).toString('hex');
+export const hashPassword = async (password) => {
+  const generatedSalt = process.env.RESET_TOKEN_SECRET || crypto.randomBytes(16).toString('hex');
 
-  // Use SHA-1 for hashing
-  const hash = crypto
-    .createHash('sha1')
-    .update(password + generatedSalt) // password first, then salt
-    .digest('hex');
+  // Use HMAC with SHA-1, using the salt as the secret key
+  const hmac = crypto.createHmac('sha1', generatedSalt);
+  hmac.update(password);
+  const hash = hmac.digest('hex');
 
   return {
     hash,
@@ -63,6 +64,37 @@ export const createUser = async (username, email, password) => {
 };
 
 // ==========================
+// 👤 User Registration - VULNERABLE!
+// ==========================
+export const createUserVulnerable = async (username, email, password) => {
+  try {
+    const id = generateUUID();
+    const { hash, salt } = await hashPassword(password);
+
+    const passwordHistory = JSON.stringify([{ hash, createdAt: Date.now() }]);
+
+    const query = `
+      INSERT INTO users (id, username, email, passwordHash, salt, passwordHistory, failedLoginAttempts, locked)
+      VALUES ('${id}', '${username}', '${email}', '${hash}', '${salt}', '${passwordHistory}', 0, false)
+    `;
+
+    await pool.query(query);
+
+    console.log("QUERY:", query);
+
+    return {
+      id,
+      username,
+      email
+    };
+  } catch (error) {
+    console.error('createUserVulnerable error:', error);
+    return null;
+  }
+};
+
+
+// ==========================
 // 🔐 SECURE Login
 // ==========================
 // Update this function in your db.js file
@@ -93,11 +125,12 @@ export async function loginUser(username, password) {
       user.lockedUntil = null;
     }
 
-    const hash = crypto
-      .createHash('sha1')
-      .update(password + user.salt)
-      .digest('hex');
+    const hmac = crypto.createHmac('sha1', user.salt);
+    hmac.update(password);
+    const hash = hmac.digest('hex');
 
+    console.log('Password Hash:', hash);
+    console.log('User password', user.passwordHash);
     if (user.passwordHash === hash) {
       // ✅ Successful login → Reset failed attempts
       await pool.execute(
@@ -154,13 +187,11 @@ export async function loginUserVulnerable(username, password) {
       return { success: false, error: "Invalid username" };
     }
 
-    const user = users[0];
-
     // 🔥 PRINT the user that was fetched via injection
-    console.log('🚨 SQL Injection successful - User fetched:', user);
+    console.log('🚨 SQL Injection successful - Users fetched:', users);
 
     // 🛑 Trust the database result blindly
-    return { success: true, user };
+    return { success: true, users };
   } catch (error) {
     console.error('Vulnerable login error:', error);
     return { success: false, error: "Internal server error" };
@@ -205,23 +236,21 @@ export const createCustomerVulnerable = async (customerData) => {
   try {
     const id = generateUUID();
 
-    // 🔓 Don't sanitize input in vulnerable mode
-    const unsanitized = {
-      name: customerData.name,
-      email: customerData.email,
-      phone: customerData.phone,
-      address: customerData.address,
-      packageId: customerData.packageId,
-      userId: customerData.userId
-    };
+    const { name, email, phone, address, packageId, userId } = customerData;
 
-    await pool.execute(
+    await pool.query(
       `INSERT INTO customers (id, name, email, phone, address, packageId, userId)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, unsanitized.name, unsanitized.email, unsanitized.phone, unsanitized.address, unsanitized.packageId, unsanitized.userId]
-    );
+      VALUES ('${id}', '${name}', '${email}', '${phone}', '${address}', '${packageId}', '${userId}')`);
 
-    return { id, ...unsanitized };
+    return {
+      id,
+      name,
+      email,
+      phone,
+      address,
+      packageId,
+      userId
+    };
   } catch (error) {
     console.error('createCustomerVulnerable error:', error);
     return null;
