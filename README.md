@@ -37,25 +37,19 @@
    - One terminal will be for the server
    - The other terminal will be for the client
 
-6. In one of the terminals, run:
-   ```
-   npm install
-   ```
-   (If this doesn't work, make sure Node.js is installed correctly on your computer)
-
-7. After the installation is complete, in the same terminal, run:
+6. After the installation is complete, in the same terminal, run:
    ```
    npm run dev
    ```
    This will start the client locally on your machine and provide a link (e.g., localhost:8080)
 
-8. In the second terminal, run:
+7. In the second terminal, run:
    ```
    node server.js
    ```
    This will start the server locally on your machine
 
-9. If you didn't receive any errors in either terminal, you can now access the website and begin testing the system, trying different data inputs, and looking for bugs.
+8. If you didn't receive any errors in either terminal, you can now access the website and begin testing the system, trying different data inputs, and looking for bugs.
 
 ## Notes
 
