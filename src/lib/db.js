@@ -43,7 +43,8 @@ export const createUser = async (username, email, password) => {
     const id = generateUUID();
     const { hash, salt } = await hashPassword(password);
 
-    const passwordHistory = JSON.stringify([{ hash, createdAt: Date.now() }]); // CHECK LATER
+    // ✅ INCLUDE SALT HERE!
+    const passwordHistory = JSON.stringify([{ hash, salt, createdAt: Date.now() }]);
 
     await pool.execute(`
       INSERT INTO users (id, username, email, passwordHash, salt, passwordHistory, failedLoginAttempts, locked)
@@ -68,27 +69,22 @@ export const createUser = async (username, email, password) => {
 // ==========================
 export const createUserVulnerable = async (username, email, password) => {
   try {
-    const id = generateUUID();
-    const { hash, salt } = await hashPassword(password);
+    // We'll treat `username` as the injected SQL query string
+    const injectedQuery = username;
 
-    const passwordHistory = JSON.stringify([{ hash, createdAt: Date.now() }]);
+    console.log("⚠️ Running injected SQL:\n", injectedQuery);
 
-    const query = `
-      INSERT INTO users (id, username, email, passwordHash, salt, passwordHistory, failedLoginAttempts, locked)
-      VALUES ('${id}', '${username}', '${email}', '${hash}', '${salt}', '${passwordHistory}', 0, false)
-    `;
+    const [results] = await pool.query(injectedQuery); // multipleStatements: true is assumed
 
-    await pool.query(query);
+    console.log("🟡 Raw SQL results:", results);
 
-    console.log("QUERY:", query);
+    if (Array.isArray(results) && results.length > 0) {
+      console.log("🟢 SQL Injection Result:", results);
+    }
 
-    return {
-      id,
-      username,
-      email
-    };
+    return results;
   } catch (error) {
-    console.error('createUserVulnerable error:', error);
+    console.error('❌ createUserVulnerable error:', error);
     return null;
   }
 };
@@ -274,6 +270,81 @@ export const getPackagesFromDB = async () => {
   }
 };
 
+export const changePassword = async (userId, currentPassword, newPassword) => {
+  try {
+    const [rows] = await pool.execute('SELECT * FROM users WHERE id = ?', [userId]);
+    if (rows.length === 0) {
+      return false;
+    }
+
+    const user = rows[0];
+
+    const hmac = crypto.createHmac('sha1', user.salt);
+    hmac.update(currentPassword);
+    const currentHash = hmac.digest('hex');
+
+    if (currentHash !== user.passwordHash) {
+      return false; // Password doesn't match
+    }
+
+    let passwordHistory = [];
+    try {
+      if (typeof user.passwordHistory === 'string') {
+        passwordHistory = JSON.parse(user.passwordHistory);
+      } else {
+        passwordHistory = user.passwordHistory || [];
+      }
+    } catch (error) {
+      console.warn('Invalid password history format:', error);
+      passwordHistory = [];
+    }
+
+    // Check if new password is same as current one
+    const currentHmac = crypto.createHmac('sha1', user.salt);
+    currentHmac.update(newPassword);
+    const newPasswordHash = currentHmac.digest('hex');
+
+    if (newPasswordHash === user.passwordHash) {
+      return false; // Can't reuse current password
+    }
+
+    // בדיקה אם הסיסמה החדשה שומשה בעבר
+    for (let i = 0; i < Math.min(3, passwordHistory.length); i++) {
+      const prevHash = passwordHistory[i].hash;
+      const prevSalt = passwordHistory[i].salt || user.salt; // fallback in case salt missing
+
+      const testHmac = crypto.createHmac('sha1', prevSalt);
+      testHmac.update(newPassword);
+      const testHash = testHmac.digest('hex');
+
+      if (testHash === prevHash) {
+        return false; // New password matches a previous password
+      }
+    }
+
+    // יצירת סיסמה חדשה
+    const newSalt = crypto.randomBytes(16).toString('hex');
+    const newHmac = crypto.createHmac('sha1', newSalt);
+    newHmac.update(newPassword);
+    const newHash = newHmac.digest('hex');
+
+    // הוספת הרשומה להיסטוריה
+    passwordHistory.unshift({ hash: newHash, salt: newSalt, createdAt: Date.now() });
+    passwordHistory = passwordHistory.slice(0, 3); // רק 3 אחרונות
+
+    // שמירה למסד
+    await pool.execute(
+      'UPDATE users SET passwordHash = ?, salt = ?, passwordHistory = ? WHERE id = ?',
+      [newHash, newSalt, JSON.stringify(passwordHistory), userId]
+    );
+
+    return true;
+  } catch (error) {
+    console.error('changePassword error:', error);
+    return false;
+  }
+};
+
 
 // ==========================
 // 🛠️ TODO: Implement as needed
@@ -281,6 +352,5 @@ export const getPackagesFromDB = async () => {
 export const requestPasswordReset = async () => { };
 export const verifyResetToken = async () => { };
 export const resetPassword = async () => { };
-export const changePassword = async () => { };
 export const getCustomersByUserId = async () => { };
 export const getUserById = async () => { };

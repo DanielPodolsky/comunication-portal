@@ -21,7 +21,7 @@ app.use(cors({
 }));
 
 import { initializeDatabase, pool } from './src/lib/mysql.js';
-import { createUser, loginUser, loginUserVulnerable, getPackagesFromDB, createCustomer, createCustomerVulnerable, createUserVulnerable } from './src/lib/db.js';
+import { createUser, loginUser, loginUserVulnerable, getPackagesFromDB, createCustomer, createCustomerVulnerable, createUserVulnerable, changePassword } from './src/lib/db.js';
 
 // Initialize database
 initializeDatabase().then(() => {
