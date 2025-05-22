@@ -69,20 +69,19 @@ export const createUser = async (username, email, password) => {
 // ==========================
 export const createUserVulnerable = async (username, email, password) => {
   try {
-    // We'll treat `username` as the injected SQL query string
-    const injectedQuery = username;
+    const query = `
+      INSERT INTO users (username, email, passwordHash, salt, passwordHistory)
+      VALUES ('${username}', '${email}', '${password}', 'salt', '[]');
+    `;
 
-    console.log("⚠️ Running injected SQL:\n", injectedQuery);
+    console.log("⚠️ Running vulnerable SQL:\n", query);
 
-    const [results] = await pool.query(injectedQuery); // multipleStatements: true is assumed
+    const [results] = await pool.query(query); // vulnerable - string interpolation!
 
-    console.log("🟡 Raw SQL results:", results);
-
-    if (Array.isArray(results) && results.length > 0) {
-      console.log("🟢 SQL Injection Result:", results);
-    }
-
-    return results;
+    return {
+      username,
+      email
+    };
   } catch (error) {
     console.error('❌ createUserVulnerable error:', error);
     return null;
@@ -202,6 +201,7 @@ export async function loginUserVulnerable(username, password) {
 export const createCustomer = async (customerData) => {
   try {
     const id = generateUUID();
+    console.log("I AM IN SECURE MODE");
 
     const sanitized = {
       name: customerData.name.replace(/</g, '&lt;').replace(/>/g, '&gt;'),
@@ -231,6 +231,7 @@ export const createCustomer = async (customerData) => {
 export const createCustomerVulnerable = async (customerData) => {
   try {
     const id = generateUUID();
+    console.log("I AM IN VULNERABLE MODE");
 
     const { name, email, phone, address, packageId, userId } = customerData;
 
@@ -330,7 +331,7 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
 
     // הוספת הרשומה להיסטוריה
     passwordHistory.unshift({ hash: newHash, salt: newSalt, createdAt: Date.now() });
-    passwordHistory = passwordHistory.slice(0, 3); // רק 3 אחרונות
+    passwordHistory = passwordHistory.slice(0, 4); // רק 3 אחרונות
 
     // שמירה למסד
     await pool.execute(
