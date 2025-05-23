@@ -164,8 +164,3 @@ This project demonstrates the development of a secure and vulnerable web-based i
 ## 🧷 Notes
 - Password hashing uses HMAC + Salt
 - Change Password endpoint validates current password and prevents reuse of last passwords
-
----
-
-## 📁 Reminder
-Attach screenshot proofs under the relevant test section above.
