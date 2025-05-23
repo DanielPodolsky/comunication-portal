@@ -6,6 +6,7 @@
 - Ofek Drihan 205852866
 - Nathan illouz 328587423
 - Ilan Apfelbaum 337752224
+- Idan Ovadia 315028779
 
 This project demonstrates the development of a secure and vulnerable web-based information system for a fictional internet service provider, including examples of **SQL Injection** and **Stored XSS** attacks, alongside their respective security mitigations.
 
